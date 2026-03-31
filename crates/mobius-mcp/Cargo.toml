@@ -1,0 +1,14 @@
+[package]
+name = "mobius-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MCP server and client integration for Mobius"
+
+[dependencies]
+mobius-core = { path = "../mobius-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
