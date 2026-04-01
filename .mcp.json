@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/shubh-trips/Documents/personal-projects/cli-based-tools/mobius"],
+      "description": "File system access for Mobius workspace"
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Persistent memory for experiment insights",
+      "env": {
+        "MEMORY_FILE": "/Users/shubh-trips/.mobius/mcp-memory.json"
+      }
+    }
+  }
+}
