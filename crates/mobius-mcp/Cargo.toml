@@ -7,15 +7,16 @@ repository.workspace = true
 description = "MCP server exposing Mobius experiment tools via Model Context Protocol"
 keywords = ["ml", "mcp", "experiment", "server"]
 categories = ["science"]
+readme = "README.md"
 
 [[bin]]
 name = "mobius-mcp"
 path = "src/main.rs"
 
 [dependencies]
-mobius-core = { path = "../mobius-core" }
-mobius-bench = { path = "../mobius-bench" }
-mobius-claw = { path = "../mobius-claw" }
+mobius-core = { path = "../mobius-core", version = "0.1.0" }
+mobius-bench = { path = "../mobius-bench", version = "0.1.0" }
+mobius-claw = { path = "../mobius-claw", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

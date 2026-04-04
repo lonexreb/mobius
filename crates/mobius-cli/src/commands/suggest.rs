@@ -115,6 +115,7 @@ mod tests {
                 cost_per_run: 1.0,
                 targets: HashMap::new(),
                 sweep_space,
+                ..Default::default()
             },
             bench: BenchSection::default(),
             compute: ComputeSection::default(),

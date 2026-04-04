@@ -1,4 +1,4 @@
-use mobius_core::compute::{ComputeBackend, OutputParser, SubprocessBackend};
+use mobius_core::compute::{ComputeBackend, OutputParser, SubprocessBackend, config_to_env};
 use mobius_core::config::MobiusConfig;
 use mobius_core::experiment::{
     ExperimentConfig, ExperimentResult, ExperimentStatus, ExperimentStore,
@@ -32,10 +32,13 @@ pub fn run(config_json: &str) -> anyhow::Result<()> {
     println!("Config overrides: {}", config_json);
 
     let backend = SubprocessBackend;
-    let env: HashMap<String, String> = HashMap::new(); // TODO: use env_map from config
-
-    let command = "echo '{\"f1\": 0.0}'".to_string(); // Placeholder — user configures in mobius.toml
-    let output = backend.submit(&command, &env, 600)?;
+    let env = config_to_env(&params, &mobius_config.experiment.env_map);
+    let command = mobius_config
+        .experiment
+        .command
+        .clone()
+        .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
+    let output = backend.submit(&command, &env, mobius_config.experiment.timeout_secs)?;
     let parsed = OutputParser::parse(&output.stdout, &output.stderr);
 
     let mut metrics = parsed.metrics;

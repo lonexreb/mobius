@@ -219,12 +219,14 @@ pub async fn handle_run(state: &State, params: RunParams) -> Result<String, Erro
     let merged = merge_params(&cfg.experiment.sweep_space, &overrides);
     let command = params
         .command
+        .or_else(|| cfg.experiment.command.clone())
         .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
-    let timeout = params.timeout_secs.unwrap_or(600);
+    let timeout = params.timeout_secs.unwrap_or(cfg.experiment.timeout_secs);
+    let env = mobius_core::compute::config_to_env(&merged, &cfg.experiment.env_map);
 
     let result = tokio::task::spawn_blocking(move || -> anyhow::Result<ExperimentResult> {
         let backend = SubprocessBackend;
-        let output = backend.submit(&command, &HashMap::new(), timeout)?;
+        let output = backend.submit(&command, &env, timeout)?;
         let parsed = OutputParser::parse(&output.stdout, &output.stderr);
 
         let mut metrics = parsed.metrics;
@@ -377,17 +379,29 @@ pub async fn handle_suggest(state: &State, params: SuggestParams) -> Result<Stri
 
 /// Handler for `mobius_sweep`.
 pub async fn handle_sweep(state: &State, params: SweepParams) -> Result<String, ErrorData> {
-    let mobius_dir = {
+    let (mobius_dir, cfg_command, cfg_env_map, cfg_timeout) = {
         let s = state.read().await;
-        s.mobius_dir.clone()
+        let cmd = s.config.as_ref().and_then(|c| c.experiment.command.clone());
+        let env = s
+            .config
+            .as_ref()
+            .map(|c| c.experiment.env_map.clone())
+            .unwrap_or_default();
+        let t = s
+            .config
+            .as_ref()
+            .map(|c| c.experiment.timeout_secs)
+            .unwrap_or(600);
+        (s.mobius_dir.clone(), cmd, env, t)
     };
 
     let spec: HashMap<String, Vec<serde_json::Value>> = serde_json::from_value(params.spec)
         .map_err(|e| invalid_params(format!("Invalid sweep spec: {e}")))?;
     let command = params
         .command
+        .or(cfg_command)
         .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
-    let timeout = params.timeout_secs.unwrap_or(600);
+    let timeout = params.timeout_secs.unwrap_or(cfg_timeout);
 
     let results = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<serde_json::Value>> {
         let param_names: Vec<String> = spec.keys().cloned().collect();
@@ -404,7 +418,8 @@ pub async fn handle_sweep(state: &State, params: SweepParams) -> Result<String, 
             for (j, name) in param_names.iter().enumerate() {
                 params.insert(name.clone(), combo[j].clone());
             }
-            let output = backend.submit(&command, &HashMap::new(), timeout)?;
+            let env = mobius_core::compute::config_to_env(&params, &cfg_env_map);
+            let output = backend.submit(&command, &env, timeout)?;
             let parsed = OutputParser::parse(&output.stdout, &output.stderr);
             let count = store.count()? + 1;
 
@@ -480,11 +495,18 @@ pub async fn handle_agent(state: &State, params: AgentParams) -> Result<String, 
             targets: cfg.experiment.targets.clone(),
             cost_per_run: cfg.experiment.cost_per_run,
             primary_metric: metric,
-            command_template: "echo '{\"f1\": 0.0}'".into(),
-            env_map: HashMap::new(),
+            command_template: cfg
+                .experiment
+                .command
+                .clone()
+                .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into()),
+            env_map: cfg.experiment.env_map.clone(),
             production_config,
             sweep_space: cfg.experiment.sweep_space.clone(),
-            timeout_secs: 600,
+            timeout_secs: cfg.experiment.timeout_secs,
+            strategies: cfg.agent.strategies.clone(),
+            plateau_window: cfg.agent.plateau_window,
+            plateau_threshold: cfg.agent.plateau_threshold,
         };
 
         let strategy_name = params
@@ -773,6 +795,7 @@ mod tests {
                 cost_per_run: 1.0,
                 targets,
                 sweep_space,
+                ..Default::default()
             },
             bench: BenchSection::default(),
             compute: ComputeSection::default(),

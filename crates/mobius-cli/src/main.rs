@@ -50,6 +50,12 @@ enum Commands {
         /// JSON sweep spec, e.g. '{"learning_rate": [0.01, 0.1]}'
         #[arg(long)]
         spec: String,
+        /// Run experiments in parallel
+        #[arg(long)]
+        parallel: bool,
+        /// Max concurrent experiments (default: 4)
+        #[arg(long, default_value = "4")]
+        max_concurrency: usize,
     },
     /// Start autonomous agent loop
     #[command(long_about = "Start the autonomous experiment agent loop.\n\n\
@@ -85,7 +91,11 @@ fn main() -> anyhow::Result<()> {
         Commands::History { last } => commands::history::run(last)?,
         Commands::Run { config } => commands::run::run(&config)?,
         Commands::Suggest => commands::suggest::run()?,
-        Commands::Sweep { spec } => commands::sweep::run(&spec)?,
+        Commands::Sweep {
+            spec,
+            parallel,
+            max_concurrency,
+        } => commands::sweep::run(&spec, parallel, max_concurrency)?,
         Commands::Agent { budget, strategy } => commands::agent::run(budget, &strategy)?,
     }
 

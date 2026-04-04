@@ -1,13 +1,16 @@
-use mobius_core::compute::{ComputeBackend, OutputParser, SubprocessBackend};
+use mobius_core::compute::{
+    ComputeBackend, OutputParser, ParallelBackend, SubprocessBackend, SyncAdapter, config_to_env,
+};
 use mobius_core::config::MobiusConfig;
 use mobius_core::experiment::{
     ExperimentConfig, ExperimentResult, ExperimentStatus, ExperimentStore,
 };
 use mobius_core::store::JsonlStore;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub fn run(spec_json: &str) -> anyhow::Result<()> {
-    let _config = MobiusConfig::load("mobius.toml").map_err(|e| {
+pub fn run(spec_json: &str, parallel: bool, max_concurrency: usize) -> anyhow::Result<()> {
+    let config = MobiusConfig::load("mobius.toml").map_err(|e| {
         anyhow::anyhow!(
             "Failed to load mobius.toml: {}. Run 'mobius init' first.",
             e
@@ -16,53 +19,74 @@ pub fn run(spec_json: &str) -> anyhow::Result<()> {
 
     let spec: HashMap<String, Vec<serde_json::Value>> = serde_json::from_str(spec_json)?;
 
-    // Generate cartesian product
     let param_names: Vec<String> = spec.keys().cloned().collect();
     let param_values: Vec<&Vec<serde_json::Value>> = param_names.iter().map(|k| &spec[k]).collect();
-
     let combos = cartesian_product(&param_values);
-    println!("Sweep: {} configs", combos.len());
+    println!(
+        "Sweep: {} configs{}",
+        combos.len(),
+        if parallel { " (parallel)" } else { "" }
+    );
 
+    let command = config
+        .experiment
+        .command
+        .as_deref()
+        .unwrap_or("echo '{\"f1\": 0.0}'");
+    let timeout = config.experiment.timeout_secs;
+
+    // Build all param sets
+    let all_params: Vec<HashMap<String, serde_json::Value>> = combos
+        .iter()
+        .map(|combo| {
+            let mut params = HashMap::new();
+            for (j, name) in param_names.iter().enumerate() {
+                params.insert(name.clone(), combo[j].clone());
+            }
+            params
+        })
+        .collect();
+
+    let outputs = if parallel {
+        run_parallel(
+            &all_params,
+            command,
+            &config.experiment.env_map,
+            timeout,
+            max_concurrency,
+        )?
+    } else {
+        run_sequential(&all_params, command, &config.experiment.env_map, timeout)?
+    };
+
+    // Store results and rank
     let store_path = dirs::home_dir()
         .unwrap_or_default()
         .join(".mobius")
         .join("history.jsonl");
     let mut store = JsonlStore::new(&store_path)?;
-    let backend = SubprocessBackend;
-
     let mut results: Vec<(HashMap<String, serde_json::Value>, HashMap<String, f64>)> = Vec::new();
 
-    for (i, combo) in combos.iter().enumerate() {
-        let mut params = HashMap::new();
-        for (j, name) in param_names.iter().enumerate() {
-            params.insert(name.clone(), combo[j].clone());
-        }
-
-        println!("[{}/{}] {:?}", i + 1, combos.len(), params);
-
-        let output = backend.submit("echo '{\"f1\": 0.0}'", &HashMap::new(), 600)?;
-        let parsed = OutputParser::parse(&output.stdout, &output.stderr);
-
+    for (params, metrics) in all_params.into_iter().zip(outputs) {
         let count = store.count()? + 1;
         let result = ExperimentResult {
-            id: format!("sweep-{:04}", count),
+            id: format!("sweep-{count:04}"),
             timestamp: chrono::Utc::now(),
             config: ExperimentConfig {
                 parameters: params.clone(),
                 metadata: HashMap::new(),
             },
-            metrics: parsed.metrics.clone(),
+            metrics: metrics.clone(),
             per_segment: HashMap::new(),
-            duration_secs: output.duration_secs,
+            duration_secs: 0.0,
             cost_usd: None,
             status: ExperimentStatus::Success,
             error: None,
         };
         store.append(&result)?;
-        results.push((params, parsed.metrics));
+        results.push((params, metrics));
     }
 
-    // Rank by f1
     results.sort_by(|a, b| {
         let fa = a.1.get("f1").unwrap_or(&0.0);
         let fb = b.1.get("f1").unwrap_or(&0.0);
@@ -76,6 +100,62 @@ pub fn run(spec_json: &str) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn run_sequential(
+    all_params: &[HashMap<String, serde_json::Value>],
+    command: &str,
+    env_map: &HashMap<String, String>,
+    timeout: u64,
+) -> anyhow::Result<Vec<HashMap<String, f64>>> {
+    let backend = SubprocessBackend;
+    let mut outputs = Vec::new();
+    for (i, params) in all_params.iter().enumerate() {
+        println!("[{}/{}] {:?}", i + 1, all_params.len(), params);
+        let env = config_to_env(params, env_map);
+        let output = backend.submit(command, &env, timeout)?;
+        let parsed = OutputParser::parse(&output.stdout, &output.stderr);
+        outputs.push(parsed.metrics);
+    }
+    Ok(outputs)
+}
+
+fn run_parallel(
+    all_params: &[HashMap<String, serde_json::Value>],
+    command: &str,
+    env_map: &HashMap<String, String>,
+    timeout: u64,
+    max_concurrency: usize,
+) -> anyhow::Result<Vec<HashMap<String, f64>>> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let adapter = Arc::new(SyncAdapter::new(SubprocessBackend));
+        let parallel = ParallelBackend::new(adapter, max_concurrency);
+
+        let jobs: Vec<_> = all_params
+            .iter()
+            .map(|params| {
+                let env = config_to_env(params, env_map);
+                (command.to_string(), env, timeout)
+            })
+            .collect();
+
+        let results = parallel.submit_batch(jobs).await;
+        let mut outputs = Vec::new();
+        for (i, r) in results.into_iter().enumerate() {
+            match r {
+                Ok(output) => {
+                    let parsed = OutputParser::parse(&output.stdout, &output.stderr);
+                    outputs.push(parsed.metrics);
+                }
+                Err(e) => {
+                    eprintln!("[{}/{}] Error: {}", i + 1, all_params.len(), e);
+                    outputs.push(HashMap::new());
+                }
+            }
+        }
+        Ok(outputs)
+    })
 }
 
 fn cartesian_product(lists: &[&Vec<serde_json::Value>]) -> Vec<Vec<serde_json::Value>> {

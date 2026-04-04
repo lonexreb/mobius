@@ -1,0 +1,25 @@
+[project]
+name = "hello-experiment"
+version = "0.1.0"
+
+[experiment]
+budget_usd = 10.0
+cost_per_run = 0.0
+command = "bash train.sh"
+timeout_secs = 30
+
+[experiment.targets]
+f1 = 0.90
+
+[experiment.env_map]
+learning_rate = "LEARNING_RATE"
+batch_size = "BATCH_SIZE"
+
+[experiment.sweep_space]
+learning_rate = [0.001, 0.005, 0.01, 0.05, 0.1]
+batch_size = [8, 16, 32, 64]
+
+[agent]
+strategies = ["gradient_guided", "random"]
+plateau_window = 5
+plateau_threshold = 0.02

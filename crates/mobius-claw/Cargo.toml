@@ -7,10 +7,11 @@ repository.workspace = true
 description = "Autonomous ML experiment agent with gradient-based learning"
 keywords = ["ml", "agent", "optimization", "gradient"]
 categories = ["science"]
+readme = "README.md"
 
 [dependencies]
-mobius-core = { path = "../mobius-core" }
-mobius-bench = { path = "../mobius-bench" }
+mobius-core = { path = "../mobius-core", version = "0.1.0" }
+mobius-bench = { path = "../mobius-bench", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

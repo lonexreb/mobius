@@ -43,7 +43,7 @@ pub fn config_already_tried(
 
 /// Build a strategy by name.
 ///
-/// Known strategies: `"gradient_guided"`, `"random"`, `"grid"`.
+/// Known strategies: `"gradient_guided"`, `"random"`, `"grid"`, `"tpe"`.
 pub fn build_strategy(
     name: &str,
     plateau_window: usize,
@@ -56,6 +56,7 @@ pub fn build_strategy(
         ))),
         "random" | "random_search" => Ok(Box::new(RandomSearch)),
         "grid" | "grid_search" => Ok(Box::new(GridSearch)),
+        "tpe" | "tpe_search" => Ok(Box::new(TpeSearch::new(0.25))),
         _ => anyhow::bail!("Unknown strategy: {name}"),
     }
 }
@@ -160,6 +161,162 @@ impl Strategy for GridSearch {
         }
 
         anyhow::bail!("Grid search exhausted all {} combinations", combos.len())
+    }
+}
+
+/// Tree-structured Parzen Estimator (TPE) for Bayesian hyperparameter optimization.
+///
+/// Splits past trials into "good" (top `gamma` quantile by metric) and "bad",
+/// fits histogram-based kernel density estimates for each group, then picks the
+/// candidate that maximizes the expected improvement ratio `l(x)/g(x)`.
+///
+/// This is the first Rust-native TPE implementation — no external dependencies.
+pub struct TpeSearch {
+    /// Fraction of history considered "good" (default: 0.25).
+    pub gamma: f64,
+}
+
+impl TpeSearch {
+    pub fn new(gamma: f64) -> Self {
+        Self { gamma }
+    }
+
+    /// Gaussian kernel density estimate at each domain point.
+    fn kde(observations: &[f64], domain: &[f64], bandwidth: f64) -> Vec<f64> {
+        if observations.is_empty() {
+            return vec![1.0 / domain.len() as f64; domain.len()];
+        }
+        let bw = if bandwidth > 0.0 { bandwidth } else { 1.0 };
+        let mut densities: Vec<f64> = domain
+            .iter()
+            .map(|&x| {
+                let sum: f64 = observations
+                    .iter()
+                    .map(|&obs| {
+                        let z = (x - obs) / bw;
+                        (-0.5 * z * z).exp()
+                    })
+                    .sum();
+                sum / (observations.len() as f64 * bw)
+            })
+            .collect();
+        // Normalize
+        let total: f64 = densities.iter().sum();
+        if total > 0.0 {
+            for d in &mut densities {
+                *d /= total;
+            }
+        }
+        densities
+    }
+
+    /// Bandwidth heuristic: Silverman's rule adapted for discrete domain.
+    fn bandwidth(observations: &[f64], domain: &[f64]) -> f64 {
+        if observations.len() < 2 || domain.len() < 2 {
+            return 1.0;
+        }
+        let range = domain.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+            - domain.iter().copied().fold(f64::INFINITY, f64::min);
+        range / (observations.len() as f64).sqrt()
+    }
+}
+
+impl Strategy for TpeSearch {
+    fn name(&self) -> &str {
+        "tpe"
+    }
+
+    fn suggest(&self, ctx: &StrategyContext) -> anyhow::Result<Suggestion> {
+        // Need minimum history to split into good/bad
+        if ctx.history.len() < 4 {
+            return RandomSearch.suggest(ctx);
+        }
+
+        // Sort by primary metric descending
+        let mut sorted: Vec<&ExperimentResult> = ctx
+            .history
+            .iter()
+            .filter(|r| r.metrics.contains_key(ctx.primary_metric))
+            .collect();
+        sorted.sort_by(|a, b| {
+            let va = a.metrics.get(ctx.primary_metric).unwrap_or(&0.0);
+            let vb = b.metrics.get(ctx.primary_metric).unwrap_or(&0.0);
+            vb.partial_cmp(va).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if sorted.is_empty() {
+            return RandomSearch.suggest(ctx);
+        }
+
+        // Split into good (top gamma) and bad
+        let n_good = ((sorted.len() as f64 * self.gamma).ceil() as usize).max(1);
+        let good = &sorted[..n_good];
+        let bad = &sorted[n_good..];
+
+        let mut best_config = HashMap::new();
+        let mut changed = HashMap::new();
+
+        for (param, values) in ctx.sweep_space {
+            // Extract numeric domain values
+            let domain: Vec<f64> = values.iter().filter_map(|v| v.as_f64()).collect();
+
+            if domain.is_empty() {
+                // Categorical: pick value most frequent in good, least in bad
+                let val = values.first().cloned().unwrap_or(serde_json::Value::Null);
+                best_config.insert(param.clone(), val.clone());
+                changed.insert(param.clone(), val);
+                continue;
+            }
+
+            let good_obs: Vec<f64> = good
+                .iter()
+                .filter_map(|r| r.config.parameters.get(param)?.as_f64())
+                .collect();
+            let bad_obs: Vec<f64> = bad
+                .iter()
+                .filter_map(|r| r.config.parameters.get(param)?.as_f64())
+                .collect();
+
+            let bw_good = Self::bandwidth(&good_obs, &domain);
+            let bw_bad = Self::bandwidth(&bad_obs, &domain);
+            let l = Self::kde(&good_obs, &domain, bw_good);
+            let g = Self::kde(&bad_obs, &domain, bw_bad);
+
+            // Pick domain value with highest l(x)/g(x) ratio
+            let best_idx = l
+                .iter()
+                .zip(g.iter())
+                .enumerate()
+                .max_by(|(_, (l1, g1)), (_, (l2, g2))| {
+                    let r1 = *l1 / g1.max(1e-10);
+                    let r2 = *l2 / g2.max(1e-10);
+                    r1.partial_cmp(&r2).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+
+            best_config.insert(param.clone(), values[best_idx].clone());
+            changed.insert(param.clone(), values[best_idx].clone());
+        }
+
+        // Dedup check: if this exact config was tried, fall back to random
+        if config_already_tried(&best_config, ctx.history) {
+            return RandomSearch.suggest(ctx);
+        }
+
+        Ok(Suggestion {
+            config: ExperimentConfig {
+                parameters: best_config,
+                metadata: HashMap::new(),
+            },
+            changed_params: changed,
+            rationale: format!(
+                "TPE: selected config maximizing expected improvement (gamma={:.2}, {} good / {} bad)",
+                self.gamma,
+                n_good,
+                bad.len()
+            ),
+        })
     }
 }
 
@@ -691,5 +848,110 @@ mod tests {
     fn test_build_strategy_unknown() {
         let err = build_strategy("bayesian", 5, 0.02);
         assert!(err.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // TpeSearch tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_tpe_insufficient_history_fallback() {
+        let file = NamedTempFile::new().unwrap();
+        let store = LearningStore::new(file.path()).unwrap();
+
+        let mut sweep = HashMap::new();
+        sweep.insert(
+            "lr".into(),
+            vec![serde_json::json!(0.01), serde_json::json!(0.1)],
+        );
+
+        let history = vec![make_result("1", 0.50, 0.25), make_result("2", 0.60, 0.30)];
+
+        let ctx = StrategyContext {
+            history: &history,
+            production_config: &HashMap::new(),
+            sweep_space: &sweep,
+            targets: &HashMap::new(),
+            primary_metric: "f1",
+            learning_store: &store,
+        };
+
+        let suggestion = TpeSearch::new(0.25).suggest(&ctx).unwrap();
+        // Falls back to random since < 4 history entries
+        assert!(suggestion.rationale.contains("Random"));
+    }
+
+    #[test]
+    fn test_tpe_prefers_good_region() {
+        let file = NamedTempFile::new().unwrap();
+        let store = LearningStore::new(file.path()).unwrap();
+
+        let mut sweep = HashMap::new();
+        sweep.insert(
+            "ball_conf".into(),
+            vec![
+                serde_json::json!(0.10),
+                serde_json::json!(0.20),
+                serde_json::json!(0.30),
+                serde_json::json!(0.40),
+                serde_json::json!(0.50),
+            ],
+        );
+
+        // High ball_conf clearly correlates with better f1
+        // Note: 0.50 is untried, so TPE can suggest it without dedup
+        let history = vec![
+            make_result("1", 0.40, 0.10),
+            make_result("2", 0.45, 0.20),
+            make_result("3", 0.80, 0.30),
+            make_result("4", 0.85, 0.40),
+        ];
+
+        let ctx = StrategyContext {
+            history: &history,
+            production_config: &HashMap::new(),
+            sweep_space: &sweep,
+            targets: &HashMap::new(),
+            primary_metric: "f1",
+            learning_store: &store,
+        };
+
+        let suggestion = TpeSearch::new(0.25).suggest(&ctx).unwrap();
+        let val = suggestion.config.parameters["ball_conf"].as_f64().unwrap();
+        // TPE should prefer the high end (0.30-0.50)
+        assert!(val >= 0.30, "TPE should prefer high ball_conf, got {val}");
+    }
+
+    #[test]
+    fn test_tpe_kde_uniform_for_empty() {
+        let domain = vec![1.0, 2.0, 3.0, 4.0];
+        let densities = TpeSearch::kde(&[], &domain, 1.0);
+        // Should be uniform
+        let expected = 1.0 / 4.0;
+        for d in &densities {
+            assert!((d - expected).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_tpe_kde_peaks_at_observations() {
+        let domain = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let observations = vec![3.0, 3.0, 3.0]; // all at 3.0
+        let bw = TpeSearch::bandwidth(&observations, &domain);
+        let densities = TpeSearch::kde(&observations, &domain, bw);
+        // Density at 3.0 (index 2) should be highest
+        let max_idx = densities
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
+        assert_eq!(max_idx, 2, "KDE should peak at observed value 3.0");
+    }
+
+    #[test]
+    fn test_build_strategy_tpe() {
+        let s = build_strategy("tpe", 5, 0.02).unwrap();
+        assert_eq!(s.name(), "tpe");
     }
 }

@@ -45,11 +45,18 @@ pub fn run(budget_limit: f64, strategy_name: &str) -> anyhow::Result<()> {
         targets: config.experiment.targets.clone(),
         cost_per_run: config.experiment.cost_per_run,
         primary_metric: "f1".into(),
-        command_template: "echo '{\"f1\": 0.0}'".into(), // User must configure
-        env_map: HashMap::new(),
+        command_template: config
+            .experiment
+            .command
+            .clone()
+            .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into()),
+        env_map: config.experiment.env_map.clone(),
         production_config,
         sweep_space: config.experiment.sweep_space.clone(),
-        timeout_secs: 600,
+        timeout_secs: config.experiment.timeout_secs,
+        strategies: config.agent.strategies.clone(),
+        plateau_window: config.agent.plateau_window,
+        plateau_threshold: config.agent.plateau_threshold,
     };
 
     let strategy = build_strategy(

@@ -1,7 +1,7 @@
 use crate::hooks::{HookAction, PostEvaluateHook, PreExecuteHook};
 use crate::learning::extract_learning;
 use crate::learning_store::LearningStore;
-use crate::strategy::{Strategy, StrategyContext};
+use crate::strategy::{Strategy, StrategyContext, build_strategy};
 use crate::{Decision, StopReason, StrategyPhase};
 use mobius_core::budget::BudgetGuard;
 use mobius_core::compute::{ComputeBackend, OutputParser};
@@ -19,6 +19,12 @@ pub struct AgentConfig {
     pub production_config: HashMap<String, serde_json::Value>,
     pub sweep_space: HashMap<String, Vec<serde_json::Value>>,
     pub timeout_secs: u64,
+    /// Available strategy names for rotation on consecutive reverts.
+    pub strategies: Vec<String>,
+    /// Plateau detection window size.
+    pub plateau_window: usize,
+    /// Plateau detection threshold.
+    pub plateau_threshold: f64,
 }
 
 /// Mutable state of the agent across iterations.
@@ -27,6 +33,7 @@ pub struct AgentState {
     pub strategy_phase: StrategyPhase,
     pub consecutive_reverts: usize,
     pub best_result: Option<ExperimentResult>,
+    pub strategy_index: usize,
 }
 
 /// Final report after the agent loop completes.
@@ -75,6 +82,7 @@ impl AgentLoop {
                 strategy_phase: StrategyPhase::ParameterTuning,
                 consecutive_reverts: 0,
                 best_result: None,
+                strategy_index: 0,
             },
         }
     }
@@ -93,8 +101,24 @@ impl AgentLoop {
             let decision = self.step()?;
             match decision {
                 Decision::Continue => continue,
-                Decision::SwitchStrategy(name) => {
-                    tracing::info!("Switching strategy to: {}", name);
+                Decision::SwitchStrategy(_) => {
+                    if self.config.strategies.len() <= 1 {
+                        return Ok(AgentReport {
+                            iterations: self.state.iteration,
+                            stop_reason: StopReason::Plateau,
+                            best_result: self.state.best_result.clone(),
+                            total_cost: self.budget.spent,
+                        });
+                    }
+                    self.state.strategy_index =
+                        (self.state.strategy_index + 1) % self.config.strategies.len();
+                    let next = &self.config.strategies[self.state.strategy_index];
+                    tracing::info!("Switching strategy to: {}", next);
+                    self.strategy = build_strategy(
+                        next,
+                        self.config.plateau_window,
+                        self.config.plateau_threshold,
+                    )?;
                     self.state.consecutive_reverts = 0;
                     continue;
                 }
@@ -371,6 +395,9 @@ mod tests {
             production_config: prod,
             sweep_space: sweep,
             timeout_secs: 10,
+            strategies: vec!["gradient_guided".into(), "random".into()],
+            plateau_window: 5,
+            plateau_threshold: 0.02,
         };
 
         AgentLoop::new(

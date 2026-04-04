@@ -38,6 +38,15 @@ pub struct ExperimentSection {
     pub targets: HashMap<String, f64>,
     #[serde(default)]
     pub sweep_space: HashMap<String, Vec<serde_json::Value>>,
+    /// Shell command to execute for each experiment.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Map parameter names to environment variables passed to the command.
+    #[serde(default)]
+    pub env_map: HashMap<String, String>,
+    /// Timeout per experiment run in seconds.
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u64,
 }
 
 fn default_budget() -> f64 {
@@ -45,6 +54,9 @@ fn default_budget() -> f64 {
 }
 fn default_cost() -> f64 {
     1.0
+}
+fn default_timeout() -> u64 {
+    600
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
