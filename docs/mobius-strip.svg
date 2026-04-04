@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <linearGradient id="strip1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#a78bfa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="strip2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4f46e5;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#818cf8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Mobius strip - back surface (visible through the twist) -->
+  <path d="M 80,150
+           C 80,80 160,50 200,90
+           C 240,130 320,80 320,150
+           C 320,220 240,250 200,210
+           C 160,170 80,220 80,150 Z"
+        fill="none" stroke="url(#strip2)" stroke-width="28"
+        stroke-linecap="round" opacity="0.35"/>
+
+  <!-- Mobius strip - front surface -->
+  <path d="M 80,150
+           C 80,90 150,60 200,100
+           C 250,140 320,90 320,150"
+        fill="none" stroke="url(#strip1)" stroke-width="28"
+        stroke-linecap="round"/>
+
+  <!-- The twist crossover -->
+  <path d="M 320,150
+           C 320,210 250,240 200,200"
+        fill="none" stroke="url(#strip1)" stroke-width="28"
+        stroke-linecap="round"/>
+
+  <!-- Bottom return (goes behind) -->
+  <path d="M 200,200
+           C 150,160 80,210 80,150"
+        fill="none" stroke="url(#strip2)" stroke-width="28"
+        stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Infinity arrow hint on the front surface -->
+  <path d="M 155,108 L 168,98 L 165,115"
+        fill="none" stroke="#e0e7ff" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step labels along the strip -->
+  <text x="110" y="105" font-family="system-ui, sans-serif" font-size="10"
+        fill="#c4b5fd" font-weight="600" text-anchor="middle">ORIENT</text>
+  <text x="200" y="78" font-family="system-ui, sans-serif" font-size="10"
+        fill="#c4b5fd" font-weight="600" text-anchor="middle">PROPOSE</text>
+  <text x="290" y="115" font-family="system-ui, sans-serif" font-size="10"
+        fill="#c4b5fd" font-weight="600" text-anchor="middle">EXECUTE</text>
+  <text x="310" y="185" font-family="system-ui, sans-serif" font-size="10"
+        fill="#c4b5fd" font-weight="600" text-anchor="middle">EVALUATE</text>
+  <text x="230" y="228" font-family="system-ui, sans-serif" font-size="10"
+        fill="#a5b4fc" font-weight="600" text-anchor="middle">LEARN</text>
+  <text x="120" y="200" font-family="system-ui, sans-serif" font-size="10"
+        fill="#a5b4fc" font-weight="600" text-anchor="middle">DECIDE</text>
+
+  <!-- Center infinity symbol -->
+  <text x="200" y="158" font-family="system-ui, sans-serif" font-size="28"
+        fill="#e0e7ff" font-weight="700" text-anchor="middle" opacity="0.6">∞</text>
+</svg>

@@ -1,28 +1,17 @@
-```
-                         ╭───── EVALUATE ─────╮
-                    ╭───╯    ╱‾‾‾‾‾‾‾‾‾‾╲     ╰───╮
-               EXECUTE     ╱  ╭────────╮  ╲     LEARN
-                  ╭───╮   │  │ MOBIUS  │   │  ╭───╮
-                  │   ╰─╮ │  │ STRIP  │   │╭─╯   │
-               PROPOSE  ╰─╲  ╰────────╯  ╱╯  DECIDE
-                    ╰───╮   ╲__________╱╱   ╭───╯
-                        ╰──── ORIENT ──────╯
-
-        ∞  The Infinite Experiment Loop — Every Pass Learns  ∞
-
-    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-    │   core   │  │  bench   │  │   claw   │  │   mcp    │
-    │ storage  │  │ evaluate │  │  agent   │  │ 10 tools │
-    │ compute  │  │ scoring  │  │ strategy │  │ 3 rsrcs  │
-    │ budget   │  │ matching │  │ learning │  │  stdio   │
-    └──────────┘  └──────────┘  └──────────┘  └──────────┘
-```
-
 <div align="center">
+
+<img src="docs/mobius-strip.svg" alt="Mobius Strip" width="200"/>
+
+```
+ __  __  ___  ___ ___ _   _ ___
+|  \/  |/ _ \| _ )_ _| | | / __|
+| |\/| | (_) | _ \| || |_| \__ \
+|_|  |_|\___/|___/___|\___/|___/
+```
 
 **High-performance Rust framework for autonomous ML experimentation.**
 
-*The Mobius strip has one side — our library has one loop. Each twist through the cycle, the agent learns.*
+*One loop. One twist. Every pass learns.*
 
 [![Rust](https://img.shields.io/badge/Rust-2024_Edition-orange?logo=rust)](https://www.rust-lang.org/)
 [![Tests](https://img.shields.io/badge/Tests-80_passing-brightgreen)]()

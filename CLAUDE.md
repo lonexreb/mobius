@@ -1,13 +1,11 @@
 # Mobius
 
 ```
-        ╭──── EVALUATE ────╮
-   ╭───╯   ╱‾‾‾‾‾‾‾‾╲     ╰──╮        _____ _____ _____ _____ _____ _____
- EXECUTE  ╱  ╭──────╮ ╲  LEARN       |     |     | __  |     |  |  |   __|
-   ╭──╮  │  │MOBIUS │  │  ╭──╮       | | | |  |  | __ -|-   -|  |  |__   |
- PROPOSE ╰╲  ╰──────╯ ╱╯DECIDE       |_|_|_|_____|_____|_____|_____|_____|
-   ╰──╮   ╲________╱╱   ╭──╯
-      ╰──── ORIENT ─────╯          ∞ The Infinite Experiment Loop  v0.1
+ __  __  ___  ___ ___ _   _ ___
+|  \/  |/ _ \| _ )_ _| | | / __|
+| |\/| | (_) | _ \| || |_| \__ \
+|_|  |_|\___/|___/___|\___/|___/
+  One loop. One twist. Every pass learns.  v0.1
 ```
 
 High-performance Rust framework for autonomous ML experimentation. One library: experiment loops, evaluation, agent orchestration, and MCP-native tool integration.
