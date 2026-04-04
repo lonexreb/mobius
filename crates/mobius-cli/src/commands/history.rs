@@ -16,8 +16,8 @@ pub fn run(last: usize) -> anyhow::Result<()> {
     }
 
     println!(
-        "\n  {:<12} {:>8} {:>8} {:>8} {:>8}  {}",
-        "ID", "F1", "Prec", "Recall", "Secs", "Status"
+        "\n  {:<12} {:>8} {:>8} {:>8} {:>8}  Status",
+        "ID", "F1", "Prec", "Recall", "Secs"
     );
     println!("  {}", "-".repeat(66));
 

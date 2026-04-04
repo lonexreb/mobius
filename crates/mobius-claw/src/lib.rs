@@ -7,12 +7,14 @@ pub mod strategy;
 use mobius_core::experiment::ExperimentResult;
 
 /// Decision after evaluating an experiment result.
+#[derive(Debug)]
 pub enum Decision {
     Continue,
     SwitchStrategy(String),
     Stop(StopReason),
 }
 
+#[derive(Debug)]
 pub enum StopReason {
     TargetsMet,
     BudgetExhausted,

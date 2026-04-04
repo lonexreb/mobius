@@ -95,31 +95,31 @@ impl OutputParser {
     fn try_json(stdout: &str) -> Option<ParsedMetrics> {
         for line in stdout.lines().rev() {
             let trimmed = line.trim();
-            if trimmed.starts_with('{') && trimmed.contains("\"f1\"") {
-                if let Ok(map) = serde_json::from_str::<HashMap<String, serde_json::Value>>(trimmed)
-                {
-                    let mut metrics = HashMap::new();
-                    let mut pm = ParsedMetrics::default();
+            if trimmed.starts_with('{')
+                && trimmed.contains("\"f1\"")
+                && let Ok(map) = serde_json::from_str::<HashMap<String, serde_json::Value>>(trimmed)
+            {
+                let mut metrics = HashMap::new();
+                let mut pm = ParsedMetrics::default();
 
-                    for (k, v) in &map {
-                        if let Some(n) = v.as_f64() {
-                            metrics.insert(k.clone(), n);
-                        }
+                for (k, v) in &map {
+                    if let Some(n) = v.as_f64() {
+                        metrics.insert(k.clone(), n);
                     }
-
-                    pm.bench_score = metrics.remove("bench_score");
-                    if let Some(tp) = metrics.remove("true_positives") {
-                        pm.true_positives = Some(tp as usize);
-                    }
-                    if let Some(fp) = metrics.remove("false_positives") {
-                        pm.false_positives = Some(fp as usize);
-                    }
-                    if let Some(r#fn) = metrics.remove("false_negatives") {
-                        pm.false_negatives = Some(r#fn as usize);
-                    }
-                    pm.metrics = metrics;
-                    return Some(pm);
                 }
+
+                pm.bench_score = metrics.remove("bench_score");
+                if let Some(tp) = metrics.remove("true_positives") {
+                    pm.true_positives = Some(tp as usize);
+                }
+                if let Some(fp) = metrics.remove("false_positives") {
+                    pm.false_positives = Some(fp as usize);
+                }
+                if let Some(r#fn) = metrics.remove("false_negatives") {
+                    pm.false_negatives = Some(r#fn as usize);
+                }
+                pm.metrics = metrics;
+                return Some(pm);
             }
         }
         None
@@ -137,14 +137,14 @@ impl OutputParser {
         for line in stdout.lines() {
             let line = line.trim();
 
-            if let Some(cap) = bench_re.captures(line) {
-                if let Ok(score) = cap[1].parse::<f64>() {
-                    pm.bench_score = Some(score);
-                }
+            if let Some(cap) = bench_re.captures(line)
+                && let Ok(score) = cap[1].parse::<f64>()
+            {
+                pm.bench_score = Some(score);
             }
 
             if let Some(cap) = dim_re.captures(line) {
-                let name = cap[1].trim().to_lowercase().replace(' ', "_").replace('/', "_");
+                let name = cap[1].trim().to_lowercase().replace([' ', '/'], "_");
                 if let Ok(score) = cap[2].parse::<f64>() {
                     pm.dimension_scores.insert(name, score);
                 }
@@ -172,10 +172,10 @@ impl OutputParser {
                 }
             }
 
-            if let Some(cap) = mm_re.captures(line) {
-                if let Ok(acc) = cap[3].parse::<f64>() {
-                    pm.metrics.insert("make_miss_accuracy".into(), acc / 100.0);
-                }
+            if let Some(cap) = mm_re.captures(line)
+                && let Ok(acc) = cap[3].parse::<f64>()
+            {
+                pm.metrics.insert("make_miss_accuracy".into(), acc / 100.0);
             }
         }
 

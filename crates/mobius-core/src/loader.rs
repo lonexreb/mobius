@@ -81,10 +81,10 @@ pub fn list_games(gt_dir: &Path) -> anyhow::Result<Vec<String>> {
     for entry in fs::read_dir(gt_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().is_some_and(|e| e == "json") {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                games.push(stem.to_string());
-            }
+        if path.extension().is_some_and(|e| e == "json")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            games.push(stem.to_string());
         }
     }
     games.sort();

@@ -55,14 +55,14 @@ pub fn extract_learning(
     let mut changed_params = Vec::new();
 
     for (key, new_val) in &curr.config.parameters {
-        if let Some(old_val) = prev.config.parameters.get(key) {
-            if old_val != new_val {
-                changed_params.push(ParamDelta {
-                    param: key.clone(),
-                    old_value: old_val.clone(),
-                    new_value: new_val.clone(),
-                });
-            }
+        if let Some(old_val) = prev.config.parameters.get(key)
+            && old_val != new_val
+        {
+            changed_params.push(ParamDelta {
+                param: key.clone(),
+                old_value: old_val.clone(),
+                new_value: new_val.clone(),
+            });
         }
     }
 

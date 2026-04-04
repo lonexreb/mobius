@@ -225,17 +225,16 @@ impl AgentLoop {
         // Step 6: LEARN
         self.budget.record_spend(self.config.cost_per_run)?;
 
-        if let Some(ref prev_best) = self.state.best_result {
-            if let Some(learning) =
+        if let Some(ref prev_best) = self.state.best_result
+            && let Some(learning) =
                 extract_learning(prev_best, &result, &self.config.primary_metric)
-            {
-                self.learning_store.append(&learning)?;
-                let delta = learning
-                    .metric_deltas
-                    .get(&self.config.primary_metric)
-                    .unwrap_or(&0.0);
-                tracing::info!("{} delta: {:+.4}", self.config.primary_metric, delta);
-            }
+        {
+            self.learning_store.append(&learning)?;
+            let delta = learning
+                .metric_deltas
+                .get(&self.config.primary_metric)
+                .unwrap_or(&0.0);
+            tracing::info!("{} delta: {:+.4}", self.config.primary_metric, delta);
         }
 
         if should_revert {

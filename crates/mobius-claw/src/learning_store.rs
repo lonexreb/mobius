@@ -65,7 +65,7 @@ impl LearningStore {
         struct Observation {
             f1_delta: f64,
             direction: String, // "increase" or "decrease"
-            new_f1: f64,
+            _new_f1: f64,
             new_value: serde_json::Value,
         }
 
@@ -110,7 +110,7 @@ impl LearningStore {
                 observations.push(Observation {
                     f1_delta,
                     direction: direction.to_string(),
-                    new_f1: f1_delta, // Use delta as proxy for ranking
+                    _new_f1: f1_delta, // Use delta as proxy for ranking
                     new_value: changed.new_value.clone(),
                 });
             }
@@ -206,10 +206,10 @@ impl LearningStore {
 
         for entry in &history[1..] {
             for (key, val) in &entry.config.parameters {
-                if let Some(first_val) = first.get(key) {
-                    if first_val != val {
-                        varied.insert(key.clone());
-                    }
+                if let Some(first_val) = first.get(key)
+                    && first_val != val
+                {
+                    varied.insert(key.clone());
                 }
             }
         }

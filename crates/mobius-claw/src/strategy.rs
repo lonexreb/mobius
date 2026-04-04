@@ -88,27 +88,26 @@ impl Strategy for GradientGuidedTuning {
         // Case 1: Insufficient history — random exploration
         if ctx.history.len() < 2 {
             let params: Vec<&String> = ctx.sweep_space.keys().collect();
-            if let Some(param) = params.choose(&mut rng) {
-                if let Some(values) = ctx.sweep_space.get(*param) {
-                    if let Some(val) = values.choose(&mut rng) {
-                        let mut config_params = ctx.production_config.clone();
-                        config_params.insert((*param).clone(), (*val).clone());
-                        let mut changed = HashMap::new();
-                        changed.insert((*param).clone(), val.clone());
-                        return Ok(Suggestion {
-                            config: ExperimentConfig {
-                                parameters: config_params,
-                                metadata: HashMap::new(),
-                            },
-                            changed_params: changed,
-                            rationale: format!(
-                                "Insufficient history ({}). Exploring {}.",
-                                ctx.history.len(),
-                                param
-                            ),
-                        });
-                    }
-                }
+            if let Some(param) = params.choose(&mut rng)
+                && let Some(values) = ctx.sweep_space.get(*param)
+                && let Some(val) = values.choose(&mut rng)
+            {
+                let mut config_params = ctx.production_config.clone();
+                config_params.insert((*param).clone(), (*val).clone());
+                let mut changed = HashMap::new();
+                changed.insert((*param).clone(), val.clone());
+                return Ok(Suggestion {
+                    config: ExperimentConfig {
+                        parameters: config_params,
+                        metadata: HashMap::new(),
+                    },
+                    changed_params: changed,
+                    rationale: format!(
+                        "Insufficient history ({}). Exploring {}.",
+                        ctx.history.len(),
+                        param
+                    ),
+                });
             }
         }
 
@@ -131,26 +130,25 @@ impl Strategy for GradientGuidedTuning {
 
         // Case 2: Plateau — explore untried or expand range
         if self.is_plateaued(&recent.iter().copied().cloned().collect::<Vec<_>>(), ctx.primary_metric) {
-            if let Some(param) = untried.first() {
-                if let Some(values) = ctx.sweep_space.get(param) {
-                    if let Some(val) = values.choose(&mut rng) {
-                        let mut config_params = base_config.clone();
-                        config_params.insert(param.clone(), (*val).clone());
-                        let mut changed = HashMap::new();
-                        changed.insert(param.clone(), val.clone());
-                        return Ok(Suggestion {
-                            config: ExperimentConfig {
-                                parameters: config_params,
-                                metadata: HashMap::new(),
-                            },
-                            changed_params: changed,
-                            rationale: format!(
-                                "Plateau detected. Exploring untried dimension: {}",
-                                param
-                            ),
-                        });
-                    }
-                }
+            if let Some(param) = untried.first()
+                && let Some(values) = ctx.sweep_space.get(param)
+                && let Some(val) = values.choose(&mut rng)
+            {
+                let mut config_params = base_config.clone();
+                config_params.insert(param.clone(), (*val).clone());
+                let mut changed = HashMap::new();
+                changed.insert(param.clone(), val.clone());
+                return Ok(Suggestion {
+                    config: ExperimentConfig {
+                        parameters: config_params,
+                        metadata: HashMap::new(),
+                    },
+                    changed_params: changed,
+                    rationale: format!(
+                        "Plateau detected. Exploring untried dimension: {}",
+                        param
+                    ),
+                });
             }
             // Fallback: expand range of most impactful param
             return self.suggest_expand_range(ctx, &base_config);
@@ -166,25 +164,23 @@ impl Strategy for GradientGuidedTuning {
         }
 
         // 50% chance: explore untried dimension instead
-        if !untried.is_empty() && rand::random::<bool>() {
-            if let Some(param) = untried.first() {
-                if let Some(values) = ctx.sweep_space.get(param) {
-                    if let Some(val) = values.choose(&mut rng) {
-                        let mut config_params = base_config.clone();
-                        config_params.insert(param.clone(), (*val).clone());
-                        let mut changed = HashMap::new();
-                        changed.insert(param.clone(), val.clone());
-                        return Ok(Suggestion {
-                            config: ExperimentConfig {
-                                parameters: config_params,
-                                metadata: HashMap::new(),
-                            },
-                            changed_params: changed,
-                            rationale: format!("Exploring untried dimension: {}", param),
-                        });
-                    }
-                }
-            }
+        if !untried.is_empty() && rand::random::<bool>()
+            && let Some(param) = untried.first()
+            && let Some(values) = ctx.sweep_space.get(param)
+            && let Some(val) = values.choose(&mut rng)
+        {
+            let mut config_params = base_config.clone();
+            config_params.insert(param.clone(), (*val).clone());
+            let mut changed = HashMap::new();
+            changed.insert(param.clone(), val.clone());
+            return Ok(Suggestion {
+                config: ExperimentConfig {
+                    parameters: config_params,
+                    metadata: HashMap::new(),
+                },
+                changed_params: changed,
+                rationale: format!("Exploring untried dimension: {}", param),
+            });
         }
 
         // Use gradient signals
@@ -195,65 +191,64 @@ impl Strategy for GradientGuidedTuning {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        if let Some(top) = gradients.first() {
-            if let Some(values) = ctx.sweep_space.get(&top.param) {
-                let val = match top.best_direction {
-                    GradientDirection::IncreaseHelps => {
-                        // Pick highest numeric value
-                        values
-                            .iter()
-                            .filter_map(|v| v.as_f64().map(|f| (f, v)))
-                            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-                            .map(|(_, v)| v.clone())
-                            .or_else(|| values.last().cloned())
-                    }
-                    GradientDirection::DecreaseHelps => {
-                        values
-                            .iter()
-                            .filter_map(|v| v.as_f64().map(|f| (f, v)))
-                            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-                            .map(|(_, v)| v.clone())
-                            .or_else(|| values.first().cloned())
-                    }
-                    GradientDirection::Inconclusive => values.choose(&mut rng).cloned(),
-                };
-
-                if let Some(val) = val {
-                    let mut config_params = base_config.clone();
-                    config_params.insert(top.param.clone(), val.clone());
-
-                    // Dedup check
-                    if self.config_already_tried(&config_params, ctx.history) {
-                        if let Some(alt) = values
-                            .iter()
-                            .find(|v| *v != &val)
-                        {
-                            config_params.insert(top.param.clone(), alt.clone());
-                        }
-                    }
-
-                    let mut changed = HashMap::new();
-                    if let Some(prod_val) = ctx.production_config.get(&top.param) {
-                        if config_params.get(&top.param) != Some(prod_val) {
-                            changed.insert(
-                                top.param.clone(),
-                                config_params.get(&top.param).cloned().unwrap_or_default(),
-                            );
-                        }
-                    }
-
-                    return Ok(Suggestion {
-                        config: ExperimentConfig {
-                            parameters: config_params,
-                            metadata: HashMap::new(),
-                        },
-                        changed_params: changed,
-                        rationale: format!(
-                            "Gradient-guided: {} ({:?}, avg_delta={:+.4})",
-                            top.param, top.best_direction, top.avg_metric_delta
-                        ),
-                    });
+        if let Some(top) = gradients.first()
+            && let Some(values) = ctx.sweep_space.get(&top.param)
+        {
+            let val = match top.best_direction {
+                GradientDirection::IncreaseHelps => {
+                    // Pick highest numeric value
+                    values
+                        .iter()
+                        .filter_map(|v| v.as_f64().map(|f| (f, v)))
+                        .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+                        .map(|(_, v)| v.clone())
+                        .or_else(|| values.last().cloned())
                 }
+                GradientDirection::DecreaseHelps => {
+                    values
+                        .iter()
+                        .filter_map(|v| v.as_f64().map(|f| (f, v)))
+                        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+                        .map(|(_, v)| v.clone())
+                        .or_else(|| values.first().cloned())
+                }
+                GradientDirection::Inconclusive => values.choose(&mut rng).cloned(),
+            };
+
+            if let Some(val) = val {
+                let mut config_params = base_config.clone();
+                config_params.insert(top.param.clone(), val.clone());
+
+                // Dedup check
+                if self.config_already_tried(&config_params, ctx.history)
+                    && let Some(alt) = values
+                        .iter()
+                        .find(|v| *v != &val)
+                {
+                    config_params.insert(top.param.clone(), alt.clone());
+                }
+
+                let mut changed = HashMap::new();
+                if let Some(prod_val) = ctx.production_config.get(&top.param)
+                    && config_params.get(&top.param) != Some(prod_val)
+                {
+                    changed.insert(
+                        top.param.clone(),
+                        config_params.get(&top.param).cloned().unwrap_or_default(),
+                    );
+                }
+
+                return Ok(Suggestion {
+                    config: ExperimentConfig {
+                        parameters: config_params,
+                        metadata: HashMap::new(),
+                    },
+                    changed_params: changed,
+                    rationale: format!(
+                        "Gradient-guided: {} ({:?}, avg_delta={:+.4})",
+                        top.param, top.best_direction, top.avg_metric_delta
+                    ),
+                });
             }
         }
 

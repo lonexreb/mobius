@@ -28,7 +28,7 @@ pub fn run(config_json: &str) -> anyhow::Result<()> {
     let backend = SubprocessBackend;
     let env: HashMap<String, String> = HashMap::new(); // TODO: use env_map from config
 
-    let command = format!("echo '{{\"f1\": 0.0}}'"); // Placeholder — user configures in mobius.toml
+    let command = "echo '{\"f1\": 0.0}'".to_string(); // Placeholder — user configures in mobius.toml
     let output = backend.submit(&command, &env, 600)?;
     let parsed = OutputParser::parse(&output.stdout, &output.stderr);
 
