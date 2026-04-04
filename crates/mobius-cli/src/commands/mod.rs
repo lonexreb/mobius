@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod dashboard;
 pub mod evaluate;
 pub mod history;
 pub mod run;

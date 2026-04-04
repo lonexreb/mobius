@@ -57,6 +57,10 @@ pub fn build_strategy(
         "random" | "random_search" => Ok(Box::new(RandomSearch)),
         "grid" | "grid_search" => Ok(Box::new(GridSearch)),
         "tpe" | "tpe_search" => Ok(Box::new(TpeSearch::new(0.25))),
+        "nsga2" | "nsga_ii" => Ok(Box::new(crate::nsga::NsgaTwo::new(
+            vec!["f1".into(), "precision".into()],
+            20,
+        ))),
         _ => anyhow::bail!("Unknown strategy: {name}"),
     }
 }

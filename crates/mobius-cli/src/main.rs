@@ -15,6 +15,8 @@ struct Cli {
 enum Commands {
     /// Initialize a new Mobius project (generates mobius.toml)
     Init,
+    /// Live terminal dashboard showing experiment progress
+    Dashboard,
     /// Evaluate predictions against ground truth
     #[command(
         long_about = "Evaluate predictions against ground truth using multi-dimensional scoring.\n\n\
@@ -67,9 +69,12 @@ enum Commands {
         /// Budget limit in USD
         #[arg(long, default_value = "20.0")]
         budget: f64,
-        /// Strategy to use (gradient_guided, random, grid)
+        /// Strategy to use (gradient_guided, random, grid, tpe, nsga2)
         #[arg(long, default_value = "gradient_guided")]
         strategy: String,
+        /// Enable ASHA trial pruning to stop bad experiments early
+        #[arg(long)]
+        pruning: bool,
     },
 }
 
@@ -83,6 +88,7 @@ fn main() -> anyhow::Result<()> {
             std::fs::write("mobius.toml", template)?;
             println!("Created mobius.toml");
         }
+        Commands::Dashboard => commands::dashboard::run()?,
         Commands::Evaluate {
             predictions,
             ground_truth,
@@ -96,7 +102,11 @@ fn main() -> anyhow::Result<()> {
             parallel,
             max_concurrency,
         } => commands::sweep::run(&spec, parallel, max_concurrency)?,
-        Commands::Agent { budget, strategy } => commands::agent::run(budget, &strategy)?,
+        Commands::Agent {
+            budget,
+            strategy,
+            pruning,
+        } => commands::agent::run(budget, &strategy, pruning)?,
     }
 
     Ok(())

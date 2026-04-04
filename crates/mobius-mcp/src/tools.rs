@@ -100,8 +100,10 @@ pub struct AgentParams {
     pub max_iterations: Option<usize>,
     /// Primary metric to optimize (default: "f1").
     pub metric: Option<String>,
-    /// Strategy to use: "gradient_guided", "random", "grid" (default: from config).
+    /// Strategy to use: "gradient_guided", "random", "grid", "tpe" (default: from config).
     pub strategy: Option<String>,
+    /// Enable ASHA trial pruning to stop bad experiments early.
+    pub pruning: Option<bool>,
 }
 
 /// Parameters for the `mobius_pareto` tool.
@@ -531,12 +533,16 @@ pub async fn handle_agent(state: &State, params: AgentParams) -> Result<String, 
         agent.add_pre_hook(Box::new(BudgetCheckHook));
         agent.add_post_hook(Box::new(RegressionDetectionHook::new(0.05)));
         agent.add_post_hook(Box::new(OverfittingDetectionHook::default()));
+        if params.pruning.unwrap_or(false) {
+            agent.set_pruner(mobius_claw::pruning::AshaPruner::new(3, 3));
+        }
 
         let report = agent.run()?;
 
         Ok(serde_json::json!({
             "iterations": report.iterations,
             "stop_reason": format!("{:?}", report.stop_reason),
+            "pruned_count": report.pruned_count,
             "best_result": report.best_result.as_ref().map(|b| serde_json::json!({
                 "id": b.id,
                 "metrics": b.metrics,

@@ -2,6 +2,7 @@ use mobius_claw::StopReason;
 use mobius_claw::agent::{AgentConfig, AgentLoop};
 use mobius_claw::hooks::{BudgetCheckHook, OverfittingDetectionHook, RegressionDetectionHook};
 use mobius_claw::learning_store::LearningStore;
+use mobius_claw::pruning::AshaPruner;
 use mobius_claw::strategy::build_strategy;
 use mobius_core::budget::BudgetGuard;
 use mobius_core::compute::SubprocessBackend;
@@ -9,7 +10,7 @@ use mobius_core::config::MobiusConfig;
 use mobius_core::store::JsonlStore;
 use std::collections::HashMap;
 
-pub fn run(budget_limit: f64, strategy_name: &str) -> anyhow::Result<()> {
+pub fn run(budget_limit: f64, strategy_name: &str, pruning: bool) -> anyhow::Result<()> {
     let config = MobiusConfig::load("mobius.toml").map_err(|e| {
         anyhow::anyhow!(
             "Failed to load mobius.toml: {}. Run 'mobius init' first.",
@@ -77,6 +78,9 @@ pub fn run(budget_limit: f64, strategy_name: &str) -> anyhow::Result<()> {
     agent.add_pre_hook(Box::new(BudgetCheckHook));
     agent.add_post_hook(Box::new(RegressionDetectionHook::new(0.05)));
     agent.add_post_hook(Box::new(OverfittingDetectionHook::default()));
+    if pruning {
+        agent.set_pruner(AshaPruner::new(3, 3));
+    }
 
     println!(
         "Starting autonomous agent loop (budget: ${:.2})...\n",

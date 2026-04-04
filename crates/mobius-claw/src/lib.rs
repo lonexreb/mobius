@@ -2,6 +2,8 @@ pub mod agent;
 pub mod hooks;
 pub mod learning;
 pub mod learning_store;
+pub mod nsga;
+pub mod pruning;
 pub mod strategy;
 
 use mobius_core::experiment::ExperimentResult;

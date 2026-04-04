@@ -1,6 +1,7 @@
 use crate::hooks::{HookAction, PostEvaluateHook, PreExecuteHook};
 use crate::learning::extract_learning;
 use crate::learning_store::LearningStore;
+use crate::pruning::AshaPruner;
 use crate::strategy::{Strategy, StrategyContext, build_strategy};
 use crate::{Decision, StopReason, StrategyPhase};
 use mobius_core::budget::BudgetGuard;
@@ -34,6 +35,7 @@ pub struct AgentState {
     pub consecutive_reverts: usize,
     pub best_result: Option<ExperimentResult>,
     pub strategy_index: usize,
+    pub pruned_count: usize,
 }
 
 /// Final report after the agent loop completes.
@@ -42,6 +44,7 @@ pub struct AgentReport {
     pub stop_reason: StopReason,
     pub best_result: Option<ExperimentResult>,
     pub total_cost: f64,
+    pub pruned_count: usize,
 }
 
 /// The autonomous experiment loop.
@@ -56,6 +59,7 @@ pub struct AgentLoop {
     budget: BudgetGuard,
     pre_hooks: Vec<Box<dyn PreExecuteHook>>,
     post_hooks: Vec<Box<dyn PostEvaluateHook>>,
+    pruner: Option<AshaPruner>,
     state: AgentState,
 }
 
@@ -77,12 +81,14 @@ impl AgentLoop {
             budget,
             pre_hooks: Vec::new(),
             post_hooks: Vec::new(),
+            pruner: None,
             state: AgentState {
                 iteration: 0,
                 strategy_phase: StrategyPhase::ParameterTuning,
                 consecutive_reverts: 0,
                 best_result: None,
                 strategy_index: 0,
+                pruned_count: 0,
             },
         }
     }
@@ -93,6 +99,10 @@ impl AgentLoop {
 
     pub fn add_post_hook(&mut self, hook: Box<dyn PostEvaluateHook>) {
         self.post_hooks.push(hook);
+    }
+
+    pub fn set_pruner(&mut self, pruner: AshaPruner) {
+        self.pruner = Some(pruner);
     }
 
     /// Run the autonomous loop until a stop condition is met.
@@ -108,6 +118,7 @@ impl AgentLoop {
                             stop_reason: StopReason::Plateau,
                             best_result: self.state.best_result.clone(),
                             total_cost: self.budget.spent,
+                            pruned_count: self.state.pruned_count,
                         });
                     }
                     self.state.strategy_index =
@@ -127,7 +138,8 @@ impl AgentLoop {
                         iterations: self.state.iteration,
                         stop_reason: reason,
                         best_result: self.state.best_result.clone(),
-                        total_cost: self.budget.remaining(),
+                        total_cost: self.budget.spent,
+                        pruned_count: self.state.pruned_count,
                     });
                 }
             }
@@ -243,6 +255,32 @@ impl AgentLoop {
                     tracing::error!("[{}] {}", hook.name(), msg);
                     should_revert = true;
                 }
+            }
+        }
+
+        // ASHA pruning check
+        if let Some(ref pruner) = self.pruner {
+            let current_metric = result
+                .metrics
+                .get(&self.config.primary_metric)
+                .copied()
+                .unwrap_or(0.0);
+            if pruner.should_prune(
+                self.state.iteration,
+                current_metric,
+                &updated_history,
+                &self.config.primary_metric,
+            ) {
+                tracing::info!(
+                    "PRUNED at iteration {}: {} = {:.4} below rung threshold",
+                    self.state.iteration,
+                    self.config.primary_metric,
+                    current_metric
+                );
+                self.state.pruned_count += 1;
+                self.state.consecutive_reverts += 1;
+                self.budget.record_spend(self.config.cost_per_run)?;
+                return self.decide(&result);
             }
         }
 
