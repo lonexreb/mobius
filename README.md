@@ -1,19 +1,28 @@
 ```
-    ███╗   ███╗ ██████╗ ██████╗ ██╗██╗   ██╗███████╗
-    ████╗ ████║██╔═══██╗██╔══██╗██║██║   ██║██╔════╝
-    ██╔████╔██║██║   ██║██████╔╝██║██║   ██║███████╗
-    ██║╚██╔╝██║██║   ██║██╔══██╗██║██║   ██║╚════██║
-    ██║ ╚═╝ ██║╚██████╔╝██████╔╝██║╚██████╔╝███████║
-    ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝ ╚══════╝
+                         ╭───── EVALUATE ─────╮
+                    ╭───╯    ╱‾‾‾‾‾‾‾‾‾‾╲     ╰───╮
+               EXECUTE     ╱  ╭────────╮  ╲     LEARN
+                  ╭───╮   │  │ MOBIUS  │   │  ╭───╮
+                  │   ╰─╮ │  │ STRIP  │   │╭─╯   │
+               PROPOSE  ╰─╲  ╰────────╯  ╱╯  DECIDE
+                    ╰───╮   ╲__________╱╱   ╭───╯
+                        ╰──── ORIENT ──────╯
 
-    One Library to Rule Them All — Autonomous ML Experimentation Framework  v0.1.0
+        ∞  The Infinite Experiment Loop — Every Pass Learns  ∞
+
+    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+    │   core   │  │  bench   │  │   claw   │  │   mcp    │
+    │ storage  │  │ evaluate │  │  agent   │  │ 10 tools │
+    │ compute  │  │ scoring  │  │ strategy │  │ 3 rsrcs  │
+    │ budget   │  │ matching │  │ learning │  │  stdio   │
+    └──────────┘  └──────────┘  └──────────┘  └──────────┘
 ```
 
 <div align="center">
 
 **High-performance Rust framework for autonomous ML experimentation.**
 
-*Gradient-guided loops. Multi-dimensional evaluation. MCP-native tooling. Budget-aware agents.*
+*The Mobius strip has one side — our library has one loop. Each twist through the cycle, the agent learns.*
 
 [![Rust](https://img.shields.io/badge/Rust-2024_Edition-orange?logo=rust)](https://www.rust-lang.org/)
 [![Tests](https://img.shields.io/badge/Tests-80_passing-brightgreen)]()
