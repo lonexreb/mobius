@@ -5,11 +5,16 @@ use mobius_core::config::MobiusConfig;
 use mobius_core::experiment::{
     ExperimentConfig, ExperimentResult, ExperimentStatus, ExperimentStore,
 };
-use mobius_core::store::JsonlStore;
+use mobius_core::store::{JsonlStore, SqliteStore};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub fn run(spec_json: &str, parallel: bool, max_concurrency: usize) -> anyhow::Result<()> {
+pub fn run(
+    spec_json: &str,
+    parallel: bool,
+    max_concurrency: usize,
+    store_backend: &str,
+) -> anyhow::Result<()> {
     let config = MobiusConfig::load("mobius.toml").map_err(|e| {
         anyhow::anyhow!(
             "Failed to load mobius.toml: {}. Run 'mobius init' first.",
@@ -60,11 +65,11 @@ pub fn run(spec_json: &str, parallel: bool, max_concurrency: usize) -> anyhow::R
     };
 
     // Store results and rank
-    let store_path = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".mobius")
-        .join("history.jsonl");
-    let mut store = JsonlStore::new(&store_path)?;
+    let mobius_dir = dirs::home_dir().unwrap_or_default().join(".mobius");
+    let mut store: Box<dyn ExperimentStore> = match store_backend {
+        "sqlite" => Box::new(SqliteStore::new(mobius_dir.join("history.db"))?),
+        _ => Box::new(JsonlStore::new(mobius_dir.join("history.jsonl"))?),
+    };
     let mut results: Vec<(HashMap<String, serde_json::Value>, HashMap<String, f64>)> = Vec::new();
 
     for (params, metrics) in all_params.into_iter().zip(outputs) {

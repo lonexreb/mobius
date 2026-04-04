@@ -104,6 +104,86 @@ pub struct AgentSection {
     pub plateau_window: usize,
     #[serde(default = "default_plateau_threshold")]
     pub plateau_threshold: f64,
+    /// Maximum retries for failed experiments (default: 1).
+    #[serde(default = "default_max_retries")]
+    pub max_retries: usize,
+    /// Strategy-specific hyperparameters.
+    #[serde(default)]
+    pub strategy_params: StrategyParams,
+}
+
+/// Strategy-specific hyperparameters configurable via mobius.toml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyParams {
+    /// TPE good/bad split quantile (default: 0.25).
+    #[serde(default = "default_tpe_gamma")]
+    pub tpe_gamma: f64,
+    /// CMA-ES population size (None = auto from dimensionality).
+    #[serde(default)]
+    pub cmaes_population_size: Option<usize>,
+    /// CMA-ES exploration constant (default: sqrt(2)).
+    #[serde(default = "default_ucb1_exploration")]
+    pub ucb1_exploration_constant: f64,
+    /// PBT population size (default: 8).
+    #[serde(default = "default_pbt_population")]
+    pub pbt_population_size: usize,
+    /// NSGA-II objectives (default: ["f1", "precision"]).
+    #[serde(default = "default_nsga_objectives")]
+    pub nsga_objectives: Vec<String>,
+    /// NSGA-II population size (default: 20).
+    #[serde(default = "default_nsga_population")]
+    pub nsga_population_size: usize,
+    /// Hyperband max resource (default: 81).
+    #[serde(default = "default_hyperband_max_resource")]
+    pub hyperband_max_resource: usize,
+    /// Hyperband reduction factor (default: 3).
+    #[serde(default = "default_hyperband_eta")]
+    pub hyperband_eta: usize,
+    /// Outcome constraints: upper bounds on metrics (e.g., latency < 100).
+    #[serde(default)]
+    pub constraints_upper: HashMap<String, f64>,
+    /// Outcome constraints: lower bounds on metrics.
+    #[serde(default)]
+    pub constraints_lower: HashMap<String, f64>,
+}
+
+impl Default for StrategyParams {
+    fn default() -> Self {
+        Self {
+            tpe_gamma: default_tpe_gamma(),
+            cmaes_population_size: None,
+            ucb1_exploration_constant: default_ucb1_exploration(),
+            pbt_population_size: default_pbt_population(),
+            nsga_objectives: default_nsga_objectives(),
+            nsga_population_size: default_nsga_population(),
+            hyperband_max_resource: default_hyperband_max_resource(),
+            hyperband_eta: default_hyperband_eta(),
+            constraints_upper: HashMap::new(),
+            constraints_lower: HashMap::new(),
+        }
+    }
+}
+
+fn default_tpe_gamma() -> f64 {
+    0.25
+}
+fn default_ucb1_exploration() -> f64 {
+    std::f64::consts::SQRT_2
+}
+fn default_pbt_population() -> usize {
+    8
+}
+fn default_nsga_objectives() -> Vec<String> {
+    vec!["f1".into(), "precision".into()]
+}
+fn default_nsga_population() -> usize {
+    20
+}
+fn default_hyperband_max_resource() -> usize {
+    81
+}
+fn default_hyperband_eta() -> usize {
+    3
 }
 
 fn default_plateau_window() -> usize {
@@ -111,6 +191,9 @@ fn default_plateau_window() -> usize {
 }
 fn default_plateau_threshold() -> f64 {
     0.02
+}
+fn default_max_retries() -> usize {
+    1
 }
 
 impl MobiusConfig {

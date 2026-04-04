@@ -7,10 +7,16 @@ use mobius_claw::strategy::build_strategy;
 use mobius_core::budget::BudgetGuard;
 use mobius_core::compute::SubprocessBackend;
 use mobius_core::config::MobiusConfig;
-use mobius_core::store::JsonlStore;
+use mobius_core::experiment::ExperimentStore;
+use mobius_core::store::{JsonlStore, SqliteStore};
 use std::collections::HashMap;
 
-pub fn run(budget_limit: f64, strategy_name: &str, pruning: bool) -> anyhow::Result<()> {
+pub fn run(
+    budget_limit: f64,
+    strategy_name: &str,
+    pruning: bool,
+    store_backend: &str,
+) -> anyhow::Result<()> {
     let config = MobiusConfig::load("mobius.toml").map_err(|e| {
         anyhow::anyhow!(
             "Failed to load mobius.toml: {}. Run 'mobius init' first.",
@@ -18,18 +24,14 @@ pub fn run(budget_limit: f64, strategy_name: &str, pruning: bool) -> anyhow::Res
         )
     })?;
 
-    let store_path = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".mobius")
-        .join("history.jsonl");
-    let learning_path = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".mobius")
-        .join("learnings.jsonl");
-    let budget_path = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".mobius")
-        .join("budget.json");
+    let mobius_dir = dirs::home_dir().unwrap_or_default().join(".mobius");
+    let learning_path = mobius_dir.join("learnings.jsonl");
+    let budget_path = mobius_dir.join("budget.json");
+
+    let experiment_store: Box<dyn ExperimentStore> = match store_backend {
+        "sqlite" => Box::new(SqliteStore::new(mobius_dir.join("history.db"))?),
+        _ => Box::new(JsonlStore::new(mobius_dir.join("history.jsonl"))?),
+    };
 
     let budget = BudgetGuard::new(budget_limit).with_state_file(&budget_path)?;
 
@@ -70,7 +72,7 @@ pub fn run(budget_limit: f64, strategy_name: &str, pruning: bool) -> anyhow::Res
         agent_config,
         strategy,
         Box::new(SubprocessBackend),
-        Box::new(JsonlStore::new(&store_path)?),
+        experiment_store,
         LearningStore::new(&learning_path)?,
         budget,
     );

@@ -28,3 +28,12 @@ clap = { version = "4", features = ["derive"] }
 toml = "0.8"
 uuid = { version = "1", features = ["v4", "serde"] }
 async-trait = "0.1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rayon = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

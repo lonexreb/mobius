@@ -2,9 +2,10 @@ use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Raw output from a compute backend execution.
 #[derive(Debug, Clone)]
@@ -146,23 +147,48 @@ impl ComputeBackend for SubprocessBackend {
         for (k, v) in env {
             cmd.env(k, v);
         }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
-        let output = cmd
-            .output()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to execute command '{}': {}", parts[0], e))?;
 
-        let duration = start.elapsed().as_secs_f64();
+        let deadline = Duration::from_secs(timeout_secs);
+        let poll_interval = Duration::from_millis(100);
 
-        if duration > timeout_secs as f64 {
-            anyhow::bail!("Command exceeded timeout of {}s", timeout_secs);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    let duration = start.elapsed().as_secs_f64();
+                    let mut stdout_buf = String::new();
+                    let mut stderr_buf = String::new();
+                    if let Some(mut out) = child.stdout.take() {
+                        let _ = out.read_to_string(&mut stdout_buf);
+                    }
+                    if let Some(mut err) = child.stderr.take() {
+                        let _ = err.read_to_string(&mut stderr_buf);
+                    }
+                    return Ok(RawOutput {
+                        stdout: stdout_buf,
+                        stderr: stderr_buf,
+                        exit_code: _status.code().unwrap_or(-1),
+                        duration_secs: duration,
+                    });
+                }
+                Ok(None) => {
+                    if start.elapsed() > deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        anyhow::bail!("Command timed out after {}s (killed)", timeout_secs);
+                    }
+                    std::thread::sleep(poll_interval);
+                }
+                Err(e) => {
+                    anyhow::bail!("Error waiting for process: {}", e);
+                }
+            }
         }
-
-        Ok(RawOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
-            duration_secs: duration,
-        })
     }
 }
 
@@ -353,6 +379,20 @@ PALOA BENCH EVALUATION
         let env = config_to_env(&params, &env_map);
         assert_eq!(env["PALOA_BALL_CONF"], "0.25");
         assert_eq!(env["PALOA_MERGE_STRATEGY"], "yolo_kimi");
+    }
+
+    #[test]
+    fn test_subprocess_timeout_kills_process() {
+        let backend = SubprocessBackend;
+        let start = Instant::now();
+        let result = backend.submit("sleep 60", &HashMap::new(), 1);
+        let elapsed = start.elapsed().as_secs_f64();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+        assert!(
+            elapsed < 5.0,
+            "Should complete quickly after kill, took {elapsed}s"
+        );
     }
 
     #[test]

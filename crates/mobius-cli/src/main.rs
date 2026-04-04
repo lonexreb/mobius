@@ -1,4 +1,6 @@
 mod commands;
+#[allow(dead_code)]
+mod style;
 
 use clap::{Parser, Subcommand};
 
@@ -58,6 +60,9 @@ enum Commands {
         /// Max concurrent experiments (default: 4)
         #[arg(long, default_value = "4")]
         max_concurrency: usize,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
     },
     /// Start autonomous agent loop
     #[command(long_about = "Start the autonomous experiment agent loop.\n\n\
@@ -69,12 +74,78 @@ enum Commands {
         /// Budget limit in USD
         #[arg(long, default_value = "20.0")]
         budget: f64,
-        /// Strategy to use (gradient_guided, random, grid, tpe, nsga2)
+        /// Strategy to use (gradient_guided, random, grid, tpe, nsga2, ucb1)
         #[arg(long, default_value = "gradient_guided")]
         strategy: String,
         /// Enable ASHA trial pruning to stop bad experiments early
         #[arg(long)]
         pruning: bool,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+    },
+    /// Show parameter importance rankings
+    Importance {
+        /// Primary metric to analyze
+        #[arg(long, default_value = "f1")]
+        metric: String,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+    },
+    /// Ask for a parameter suggestion (ask-and-tell interface, outputs JSON)
+    Ask {
+        /// Strategy to use for suggestions
+        #[arg(long, default_value = "gradient_guided")]
+        strategy: String,
+        /// Primary metric to optimize
+        #[arg(long, default_value = "f1")]
+        metric: String,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+    },
+    /// Tell the system about an experiment result (ask-and-tell interface, outputs JSON)
+    Tell {
+        /// JSON config parameters, e.g. '{"lr": 0.01}'
+        #[arg(long)]
+        config: String,
+        /// JSON metrics, e.g. '{"f1": 0.85}'
+        #[arg(long)]
+        metrics: String,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+    },
+    /// Compare experiments side by side
+    Compare {
+        /// Experiment IDs to compare (at least 2)
+        #[arg(required = true)]
+        ids: Vec<String>,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+    },
+    /// Enqueue a specific config for the agent to run next
+    Enqueue {
+        /// JSON config parameters, e.g. '{"lr": 0.01}'
+        #[arg(long)]
+        config: String,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+    },
+    /// Export experiment history to CSV or JSON
+    Export {
+        /// Output format: csv or json
+        #[arg(long, default_value = "csv")]
+        format: String,
+        /// Storage backend: jsonl or sqlite
+        #[arg(long, default_value = "jsonl")]
+        store: String,
+        /// Output file path (default: stdout)
+        #[arg(long)]
+        output: Option<String>,
     },
 }
 
@@ -101,12 +172,32 @@ fn main() -> anyhow::Result<()> {
             spec,
             parallel,
             max_concurrency,
-        } => commands::sweep::run(&spec, parallel, max_concurrency)?,
+            store,
+        } => commands::sweep::run(&spec, parallel, max_concurrency, &store)?,
         Commands::Agent {
             budget,
             strategy,
             pruning,
-        } => commands::agent::run(budget, &strategy, pruning)?,
+            store,
+        } => commands::agent::run(budget, &strategy, pruning, &store)?,
+        Commands::Importance { metric, store } => commands::importance::run(&metric, &store)?,
+        Commands::Ask {
+            strategy,
+            metric,
+            store,
+        } => commands::ask::run(&strategy, &metric, &store)?,
+        Commands::Tell {
+            config,
+            metrics,
+            store,
+        } => commands::tell::run(&config, &metrics, &store)?,
+        Commands::Compare { ids, store } => commands::compare::run(&ids, &store)?,
+        Commands::Enqueue { config, store } => commands::enqueue::run(&config, &store)?,
+        Commands::Export {
+            format,
+            store,
+            output,
+        } => commands::export::run(&format, &store, output.as_deref())?,
     }
 
     Ok(())

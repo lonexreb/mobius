@@ -151,6 +151,70 @@ impl PostEvaluateHook for OverfittingDetectionHook {
     }
 }
 
+/// Checks experiment results against outcome constraints.
+///
+/// Warns when metrics violate upper or lower bounds. Example: maximize
+/// accuracy subject to `latency < 100ms` (upper bound on latency).
+pub struct ConstraintCheckHook {
+    /// Metrics that must not exceed these values.
+    pub upper_bounds: std::collections::HashMap<String, f64>,
+    /// Metrics that must not fall below these values.
+    pub lower_bounds: std::collections::HashMap<String, f64>,
+}
+
+impl ConstraintCheckHook {
+    /// Create a new constraint check hook.
+    pub fn new(
+        upper_bounds: std::collections::HashMap<String, f64>,
+        lower_bounds: std::collections::HashMap<String, f64>,
+    ) -> Self {
+        Self {
+            upper_bounds,
+            lower_bounds,
+        }
+    }
+}
+
+impl PostEvaluateHook for ConstraintCheckHook {
+    fn name(&self) -> &str {
+        "constraint_check"
+    }
+
+    fn check(
+        &self,
+        result: &ExperimentResult,
+        _history: &[ExperimentResult],
+        _primary_metric: &str,
+    ) -> anyhow::Result<HookAction> {
+        let mut violations = Vec::new();
+
+        for (metric, &max_val) in &self.upper_bounds {
+            if let Some(&actual) = result.metrics.get(metric)
+                && actual > max_val
+            {
+                violations.push(format!("{metric}={actual:.4} > {max_val:.4}"));
+            }
+        }
+
+        for (metric, &min_val) in &self.lower_bounds {
+            if let Some(&actual) = result.metrics.get(metric)
+                && actual < min_val
+            {
+                violations.push(format!("{metric}={actual:.4} < {min_val:.4}"));
+            }
+        }
+
+        if violations.is_empty() {
+            Ok(HookAction::Proceed)
+        } else {
+            Ok(HookAction::Warn(format!(
+                "Constraint violations: {}",
+                violations.join(", ")
+            )))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +270,36 @@ mod tests {
         match hook.check(&current, &history, "f1").unwrap() {
             HookAction::Warn(msg) => assert!(msg.contains("Regression")),
             other => panic!("Expected Warn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constraint_upper_violated() {
+        let mut upper = HashMap::new();
+        upper.insert("latency".into(), 100.0);
+        let hook = ConstraintCheckHook::new(upper, HashMap::new());
+
+        let mut result = make_result(0.85);
+        result.metrics.insert("latency".into(), 150.0);
+
+        match hook.check(&result, &[], "f1").unwrap() {
+            HookAction::Warn(msg) => assert!(msg.contains("latency")),
+            other => panic!("Expected Warn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constraint_satisfied() {
+        let mut upper = HashMap::new();
+        upper.insert("latency".into(), 100.0);
+        let hook = ConstraintCheckHook::new(upper, HashMap::new());
+
+        let mut result = make_result(0.85);
+        result.metrics.insert("latency".into(), 50.0);
+
+        match hook.check(&result, &[], "f1").unwrap() {
+            HookAction::Proceed => {}
+            other => panic!("Expected Proceed, got {:?}", other),
         }
     }
 

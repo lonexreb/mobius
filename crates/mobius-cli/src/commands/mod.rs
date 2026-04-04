@@ -1,8 +1,14 @@
 pub mod agent;
+pub mod ask;
+pub mod compare;
 pub mod dashboard;
+pub mod enqueue;
 pub mod evaluate;
+pub mod export;
 pub mod history;
+pub mod importance;
 pub mod run;
 pub mod status;
 pub mod suggest;
 pub mod sweep;
+pub mod tell;

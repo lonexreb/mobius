@@ -62,8 +62,7 @@ impl DashboardApp {
             self.history = h;
         }
         if self.budget_path.exists()
-            && let Ok(b) =
-                BudgetGuard::new(self.budget.limit).with_state_file(&self.budget_path)
+            && let Ok(b) = BudgetGuard::new(self.budget.limit).with_state_file(&self.budget_path)
         {
             self.budget = b;
         }

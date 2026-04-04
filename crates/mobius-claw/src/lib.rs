@@ -1,10 +1,16 @@
 pub mod agent;
+pub mod auto_strategy;
+pub mod cmaes;
 pub mod hooks;
+pub mod hyperband;
+pub mod importance;
 pub mod learning;
 pub mod learning_store;
 pub mod nsga;
+pub mod pbt;
 pub mod pruning;
 pub mod strategy;
+pub mod tree_search;
 
 use mobius_core::experiment::ExperimentResult;
 

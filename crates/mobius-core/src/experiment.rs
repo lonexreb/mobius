@@ -36,6 +36,8 @@ pub enum ExperimentStatus {
     Success,
     Error,
     Timeout,
+    /// Enqueued for execution by the agent loop.
+    Pending,
 }
 
 /// Trait for experiment storage backends.

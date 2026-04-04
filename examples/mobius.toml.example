@@ -15,9 +15,14 @@ version = "0.1.0"
 # -----------------------------------------------------------------------------
 [experiment]
 # Total budget in USD for all experiment runs (float, default: 20.0)
-budget_usd = 20.0
+budget_usd = 50.0
 # Estimated cost per experiment run in USD (float, default: 1.0)
 cost_per_run = 1.0
+# Shell command to execute for each experiment (string, optional)
+# The command receives parameters as environment variables (see env_map below).
+# command = "python train.py"
+# Timeout per experiment run in seconds (int, default: 600)
+timeout_secs = 600
 
 # Target metric values. The agent stops when ALL targets are met.
 # Keys must match metric names in your pipeline's JSON output.
@@ -27,9 +32,18 @@ precision = 0.90
 
 # Parameter search space. Each key maps to an array of values to try.
 # The agent, sweep, and suggest commands sample from this space.
+# Tip: Parameters spanning >2 orders of magnitude (like learning_rate below)
+# are automatically sampled in log-space by TPE and CMA-ES.
 [experiment.sweep_space]
-learning_rate = [0.001, 0.01, 0.1]
-batch_size = [16, 32, 64]
+learning_rate = [0.0001, 0.001, 0.01, 0.1]
+batch_size = [16, 32, 64, 128]
+dropout = [0.1, 0.2, 0.3, 0.5]
+
+# Map parameter names to environment variables passed to the command.
+[experiment.env_map]
+learning_rate = "TRAIN_LR"
+batch_size = "TRAIN_BATCH_SIZE"
+dropout = "TRAIN_DROPOUT"
 
 # -----------------------------------------------------------------------------
 # Evaluation / Benchmarking
@@ -72,11 +86,43 @@ backend = "local"
 # Agent loop settings
 # -----------------------------------------------------------------------------
 [agent]
-# Strategy to use: "gradient_guided", "random", "grid"
-# The first entry is the default. (array of strings)
-strategies = ["gradient_guided"]
+# Strategies to use. The agent cycles through these on consecutive reverts.
+# Available: "gradient_guided", "random", "grid", "tpe", "nsga2", "ucb1",
+#            "cmaes", "pbt", "auto", "hyperband"
+strategies = ["auto", "tpe", "gradient_guided"]
 # Number of recent experiments to check for plateau (int, default: 5)
 plateau_window = 5
 # Minimum metric variance to consider progress (float, default: 0.02)
-# If variance across the plateau_window is below this, the agent explores new dimensions.
 plateau_threshold = 0.02
+# Maximum retries for failed experiments (int, default: 1)
+max_retries = 2
+
+# -----------------------------------------------------------------------------
+# Strategy-specific hyperparameters (all optional, sensible defaults)
+# -----------------------------------------------------------------------------
+[agent.strategy_params]
+# TPE: fraction of history considered "good" (float, default: 0.25)
+tpe_gamma = 0.25
+# CMA-ES: population size (int or omit for auto = 4 + floor(3 * ln(d)))
+# cmaes_population_size = 10
+# UCB1: exploration constant (float, default: sqrt(2) ~ 1.414)
+# ucb1_exploration_constant = 1.414
+# PBT: population size (int, default: 8)
+pbt_population_size = 8
+# NSGA-II: objective metrics (array of strings, default: ["f1", "precision"])
+nsga_objectives = ["f1", "precision"]
+# NSGA-II: population size (int, default: 20)
+nsga_population_size = 20
+# Hyperband: max resource/fidelity budget (int, default: 81)
+hyperband_max_resource = 81
+# Hyperband: reduction factor (int, default: 3, keeps top 1/eta at each rung)
+hyperband_eta = 3
+
+# Outcome constraints: experiments violating these trigger warnings.
+# Useful for constrained optimization (e.g., maximize accuracy subject to latency < 100ms).
+[agent.strategy_params.constraints_upper]
+# latency_ms = 100.0
+# memory_gb = 8.0
+
+[agent.strategy_params.constraints_lower]
+# min_accuracy = 0.50

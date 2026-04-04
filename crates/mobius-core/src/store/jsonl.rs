@@ -31,8 +31,8 @@ impl ExperimentStore for JsonlStore {
             .create(true)
             .append(true)
             .open(&self.path)?;
-        let line = serde_json::to_string(result)?;
-        writeln!(file, "{}", line)?;
+        serde_json::to_writer(&mut file, result)?;
+        writeln!(file)?;
         Ok(())
     }
 

@@ -6,6 +6,7 @@
 use crate::strategy::{RandomSearch, Strategy, StrategyContext, Suggestion, config_already_tried};
 use mobius_core::experiment::{ExperimentConfig, ExperimentResult};
 use rand::prelude::IndexedRandom;
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 /// NSGA-II multi-objective optimization strategy.
@@ -100,58 +101,73 @@ impl NsgaTwo {
     }
 
     /// Crowding distance for solutions within a front.
+    ///
+    /// Per-objective contributions computed in parallel via rayon, then summed.
     fn crowding_distance(&self, front: &[usize], results: &[ExperimentResult]) -> Vec<f64> {
         let n = front.len();
         if n <= 2 {
             return vec![f64::INFINITY; n];
         }
 
-        let mut distances = vec![0.0f64; n];
+        // Compute per-objective distance contributions in parallel
+        let per_obj: Vec<Vec<f64>> = self
+            .objectives
+            .par_iter()
+            .map(|obj| {
+                let mut obj_dist = vec![0.0f64; n];
 
-        for obj in &self.objectives {
-            // Sort front indices by this objective
-            let mut sorted_indices: Vec<usize> = (0..n).collect();
-            sorted_indices.sort_by(|&a, &b| {
-                let va = results[front[a]].metrics.get(obj).copied().unwrap_or(0.0);
-                let vb = results[front[b]].metrics.get(obj).copied().unwrap_or(0.0);
-                va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
-            });
+                let mut sorted_indices: Vec<usize> = (0..n).collect();
+                sorted_indices.sort_by(|&a, &b| {
+                    let va = results[front[a]].metrics.get(obj).copied().unwrap_or(0.0);
+                    let vb = results[front[b]].metrics.get(obj).copied().unwrap_or(0.0);
+                    va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+                });
 
-            // Boundary points get infinite distance
-            distances[sorted_indices[0]] = f64::INFINITY;
-            distances[sorted_indices[n - 1]] = f64::INFINITY;
+                obj_dist[sorted_indices[0]] = f64::INFINITY;
+                obj_dist[sorted_indices[n - 1]] = f64::INFINITY;
 
-            let min_val = results[front[sorted_indices[0]]]
-                .metrics
-                .get(obj)
-                .copied()
-                .unwrap_or(0.0);
-            let max_val = results[front[sorted_indices[n - 1]]]
-                .metrics
-                .get(obj)
-                .copied()
-                .unwrap_or(0.0);
-            let range = max_val - min_val;
-            if range < 1e-10 {
-                continue;
-            }
-
-            for i in 1..(n - 1) {
-                let prev = results[front[sorted_indices[i - 1]]]
+                let min_val = results[front[sorted_indices[0]]]
                     .metrics
                     .get(obj)
                     .copied()
                     .unwrap_or(0.0);
-                let next = results[front[sorted_indices[i + 1]]]
+                let max_val = results[front[sorted_indices[n - 1]]]
                     .metrics
                     .get(obj)
                     .copied()
                     .unwrap_or(0.0);
-                distances[sorted_indices[i]] += (next - prev) / range;
-            }
-        }
+                let range = max_val - min_val;
+                if range >= 1e-10 {
+                    for i in 1..(n - 1) {
+                        let prev = results[front[sorted_indices[i - 1]]]
+                            .metrics
+                            .get(obj)
+                            .copied()
+                            .unwrap_or(0.0);
+                        let next = results[front[sorted_indices[i + 1]]]
+                            .metrics
+                            .get(obj)
+                            .copied()
+                            .unwrap_or(0.0);
+                        obj_dist[sorted_indices[i]] += (next - prev) / range;
+                    }
+                }
 
-        distances
+                obj_dist
+            })
+            .collect();
+
+        // Sum per-objective contributions
+        (0..n)
+            .map(|i| {
+                let sum: f64 = per_obj.iter().map(|d| d[i]).sum();
+                if per_obj.iter().any(|d| d[i].is_infinite()) {
+                    f64::INFINITY
+                } else {
+                    sum
+                }
+            })
+            .collect()
     }
 
     /// Generate a new candidate by crossover of two parents from the best front.

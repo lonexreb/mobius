@@ -2,6 +2,7 @@ use crate::learning::GradientDirection;
 use crate::learning_store::LearningStore;
 use mobius_core::experiment::{ExperimentConfig, ExperimentResult};
 use rand::prelude::IndexedRandom;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -41,13 +42,29 @@ pub fn config_already_tried(
     })
 }
 
-/// Build a strategy by name.
+/// Build a strategy by name using default parameters.
 ///
-/// Known strategies: `"gradient_guided"`, `"random"`, `"grid"`, `"tpe"`.
+/// Known strategies: `"gradient_guided"`, `"random"`, `"grid"`, `"tpe"`,
+/// `"nsga2"`, `"ucb1"`, `"cmaes"`, `"pbt"`, `"auto"`, `"hyperband"`.
 pub fn build_strategy(
     name: &str,
     plateau_window: usize,
     plateau_threshold: f64,
+) -> anyhow::Result<Box<dyn Strategy>> {
+    build_strategy_with_params(
+        name,
+        plateau_window,
+        plateau_threshold,
+        &mobius_core::config::StrategyParams::default(),
+    )
+}
+
+/// Build a strategy by name with configurable parameters from mobius.toml.
+pub fn build_strategy_with_params(
+    name: &str,
+    plateau_window: usize,
+    plateau_threshold: f64,
+    params: &mobius_core::config::StrategyParams,
 ) -> anyhow::Result<Box<dyn Strategy>> {
     match name {
         "gradient_guided" | "gradient_guided_tuning" => Ok(Box::new(GradientGuidedTuning::new(
@@ -56,10 +73,27 @@ pub fn build_strategy(
         ))),
         "random" | "random_search" => Ok(Box::new(RandomSearch)),
         "grid" | "grid_search" => Ok(Box::new(GridSearch)),
-        "tpe" | "tpe_search" => Ok(Box::new(TpeSearch::new(0.25))),
+        "tpe" | "tpe_search" => Ok(Box::new(TpeSearch::new(params.tpe_gamma))),
         "nsga2" | "nsga_ii" => Ok(Box::new(crate::nsga::NsgaTwo::new(
-            vec!["f1".into(), "precision".into()],
-            20,
+            params.nsga_objectives.clone(),
+            params.nsga_population_size,
+        ))),
+        "ucb1" | "tree_search" => Ok(Box::new(crate::tree_search::UcbTreeSearch::new(
+            params.ucb1_exploration_constant,
+        ))),
+        "cmaes" | "cma_es" => Ok(Box::new(crate::cmaes::CmaEs::new(
+            params.cmaes_population_size,
+        ))),
+        "pbt" | "population_based" => {
+            Ok(Box::new(crate::pbt::Pbt::new(params.pbt_population_size)))
+        }
+        "auto" | "auto_strategy" => Ok(Box::new(crate::auto_strategy::AutoStrategy::new(
+            plateau_window,
+            plateau_threshold,
+        ))),
+        "hyperband" => Ok(Box::new(crate::hyperband::Hyperband::new(
+            params.hyperband_max_resource,
+            params.hyperband_eta,
         ))),
         _ => anyhow::bail!("Unknown strategy: {name}"),
     }
@@ -185,6 +219,20 @@ impl TpeSearch {
         Self { gamma }
     }
 
+    /// Detect if a numeric domain should use log-scale sampling.
+    ///
+    /// Returns true if the domain spans more than 2 orders of magnitude
+    /// and all values are positive — typical for learning rates, weight decay,
+    /// regularization coefficients.
+    fn is_log_scale(domain: &[f64]) -> bool {
+        if domain.len() < 2 {
+            return false;
+        }
+        let min = domain.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = domain.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        min > 0.0 && max / min > 100.0
+    }
+
     /// Gaussian kernel density estimate at each domain point.
     fn kde(observations: &[f64], domain: &[f64], bandwidth: f64) -> Vec<f64> {
         if observations.is_empty() {
@@ -192,7 +240,7 @@ impl TpeSearch {
         }
         let bw = if bandwidth > 0.0 { bandwidth } else { 1.0 };
         let mut densities: Vec<f64> = domain
-            .iter()
+            .par_iter()
             .map(|&x| {
                 let sum: f64 = observations
                     .iter()
@@ -272,19 +320,34 @@ impl Strategy for TpeSearch {
                 continue;
             }
 
+            let use_log = Self::is_log_scale(&domain);
+
             let good_obs: Vec<f64> = good
                 .iter()
-                .filter_map(|r| r.config.parameters.get(param)?.as_f64())
+                .filter_map(|r| {
+                    let v = r.config.parameters.get(param)?.as_f64()?;
+                    Some(if use_log { v.ln() } else { v })
+                })
                 .collect();
             let bad_obs: Vec<f64> = bad
                 .iter()
-                .filter_map(|r| r.config.parameters.get(param)?.as_f64())
+                .filter_map(|r| {
+                    let v = r.config.parameters.get(param)?.as_f64()?;
+                    Some(if use_log { v.ln() } else { v })
+                })
                 .collect();
 
-            let bw_good = Self::bandwidth(&good_obs, &domain);
-            let bw_bad = Self::bandwidth(&bad_obs, &domain);
-            let l = Self::kde(&good_obs, &domain, bw_good);
-            let g = Self::kde(&bad_obs, &domain, bw_bad);
+            // KDE operates in log-space for log-scale params
+            let kde_domain: Vec<f64> = if use_log {
+                domain.iter().map(|v| v.ln()).collect()
+            } else {
+                domain.clone()
+            };
+
+            let bw_good = Self::bandwidth(&good_obs, &kde_domain);
+            let bw_bad = Self::bandwidth(&bad_obs, &kde_domain);
+            let l = Self::kde(&good_obs, &kde_domain, bw_good);
+            let g = Self::kde(&bad_obs, &kde_domain, bw_bad);
 
             // Pick domain value with highest l(x)/g(x) ratio
             let best_idx = l
