@@ -3,7 +3,10 @@ name = "mobius-bench"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "High-performance ML evaluation and benchmarking framework"
+keywords = ["ml", "evaluation", "benchmark", "scoring"]
+categories = ["science"]
 
 [dependencies]
 mobius-core = { path = "../mobius-core" }

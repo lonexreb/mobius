@@ -8,11 +8,13 @@ use crate::error::{invalid_params, to_mcp_error};
 use crate::state::State;
 use mobius_bench::evaluator::Evaluator;
 use mobius_bench::matcher::GreedyTimestampMatcher;
-use mobius_bench::scorers::{ClassificationAccuracyScorer, DimensionScorer, F1Scorer, TimestampMaeScorer};
+use mobius_bench::scorers::{
+    ClassificationAccuracyScorer, DimensionScorer, F1Scorer, TimestampMaeScorer,
+};
 use mobius_claw::agent::{AgentConfig, AgentLoop};
 use mobius_claw::hooks::{BudgetCheckHook, OverfittingDetectionHook, RegressionDetectionHook};
 use mobius_claw::learning_store::LearningStore;
-use mobius_claw::strategy::{GradientGuidedTuning, Strategy, StrategyContext};
+use mobius_claw::strategy::{StrategyContext, build_strategy};
 use mobius_core::budget::BudgetGuard;
 use mobius_core::compute::{ComputeBackend, OutputParser, SubprocessBackend};
 use mobius_core::config::DimensionConfig;
@@ -73,6 +75,8 @@ pub struct EvaluateParams {
 pub struct SuggestParams {
     /// Primary metric to optimize (default: "f1").
     pub metric: Option<String>,
+    /// Strategy to use: "gradient_guided", "random", "grid" (default: from config).
+    pub strategy: Option<String>,
 }
 
 /// Parameters for the `mobius_sweep` tool.
@@ -96,6 +100,8 @@ pub struct AgentParams {
     pub max_iterations: Option<usize>,
     /// Primary metric to optimize (default: "f1").
     pub metric: Option<String>,
+    /// Strategy to use: "gradient_guided", "random", "grid" (default: from config).
+    pub strategy: Option<String>,
 }
 
 /// Parameters for the `mobius_pareto` tool.
@@ -139,16 +145,22 @@ pub async fn handle_status(state: &State, params: StatusParams) -> Result<String
     let mut targets_json = serde_json::Map::new();
     if let Some(cfg) = &s.config {
         for (m, target) in &cfg.experiment.targets {
-            let current = s.store.get_best(m).ok()
+            let current = s
+                .store
+                .get_best(m)
+                .ok()
                 .flatten()
                 .and_then(|r| r.metrics.get(m).copied())
                 .unwrap_or(0.0);
-            targets_json.insert(m.clone(), serde_json::json!({
-                "current": current,
-                "target": target,
-                "gap": (target - current).max(0.0),
-                "met": current >= *target,
-            }));
+            targets_json.insert(
+                m.clone(),
+                serde_json::json!({
+                    "current": current,
+                    "target": target,
+                    "gap": (target - current).max(0.0),
+                    "met": current >= *target,
+                }),
+            );
         }
     }
 
@@ -174,15 +186,17 @@ pub async fn handle_history(state: &State, params: HistoryParams) -> Result<Stri
 
     let experiments: Vec<serde_json::Value> = recent
         .iter()
-        .map(|r| serde_json::json!({
-            "id": r.id,
-            "timestamp": r.timestamp.to_rfc3339(),
-            "config": r.config.parameters,
-            "metrics": r.metrics,
-            "duration_secs": r.duration_secs,
-            "status": format!("{:?}", r.status),
-            "cost_usd": r.cost_usd,
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "timestamp": r.timestamp.to_rfc3339(),
+                "config": r.config.parameters,
+                "metrics": r.metrics,
+                "duration_secs": r.duration_secs,
+                "status": format!("{:?}", r.status),
+                "cost_usd": r.cost_usd,
+            })
+        })
         .collect();
 
     let result = serde_json::json!({
@@ -198,11 +212,14 @@ pub async fn handle_run(state: &State, params: RunParams) -> Result<String, Erro
         let s = state.read().await;
         (s.config.clone(), s.mobius_dir.clone())
     };
-    let cfg = config.ok_or_else(|| invalid_params("No mobius.toml found. Run 'mobius init' first."))?;
+    let cfg =
+        config.ok_or_else(|| invalid_params("No mobius.toml found. Run 'mobius init' first."))?;
 
     let overrides = parse_overrides(&params.config_overrides)?;
     let merged = merge_params(&cfg.experiment.sweep_space, &overrides);
-    let command = params.command.unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
+    let command = params
+        .command
+        .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
     let timeout = params.timeout_secs.unwrap_or(600);
 
     let result = tokio::task::spawn_blocking(move || -> anyhow::Result<ExperimentResult> {
@@ -222,17 +239,31 @@ pub async fn handle_run(state: &State, params: RunParams) -> Result<String, Erro
         let result = ExperimentResult {
             id: format!("exp-{count:04}"),
             timestamp: chrono::Utc::now(),
-            config: ExperimentConfig { parameters: merged, metadata: HashMap::new() },
+            config: ExperimentConfig {
+                parameters: merged,
+                metadata: HashMap::new(),
+            },
             metrics,
             per_segment: HashMap::new(),
             duration_secs: output.duration_secs,
             cost_usd: Some(cfg.experiment.cost_per_run),
-            status: if output.exit_code == 0 { ExperimentStatus::Success } else { ExperimentStatus::Error },
-            error: if output.exit_code != 0 { Some(output.stderr.chars().take(200).collect()) } else { None },
+            status: if output.exit_code == 0 {
+                ExperimentStatus::Success
+            } else {
+                ExperimentStatus::Error
+            },
+            error: if output.exit_code != 0 {
+                Some(output.stderr.chars().take(200).collect())
+            } else {
+                None
+            },
         };
         store.append(&result)?;
         Ok(result)
-    }).await.map_err(to_mcp_error)?.map_err(to_mcp_error)?;
+    })
+    .await
+    .map_err(to_mcp_error)?
+    .map_err(to_mcp_error)?;
 
     // Record spend
     {
@@ -256,12 +287,16 @@ pub async fn handle_evaluate(state: &State, params: EvaluateParams) -> Result<St
     let match_window = {
         let s = state.read().await;
         params.match_window.unwrap_or_else(|| {
-            s.config.as_ref().map(|c| c.bench.match_window).unwrap_or(6.0)
+            s.config
+                .as_ref()
+                .map(|c| c.bench.match_window)
+                .unwrap_or(6.0)
         })
     };
     let dimensions = {
         let s = state.read().await;
-        s.config.as_ref()
+        s.config
+            .as_ref()
             .map(|c| c.bench.dimensions.clone())
             .filter(|d| !d.is_empty())
             .unwrap_or_else(default_dimensions)
@@ -288,7 +323,10 @@ pub async fn handle_evaluate(state: &State, params: EvaluateParams) -> Result<St
             "false_positive_count": bench.false_positive_count,
             "missed_count": bench.missed_count,
         }))
-    }).await.map_err(to_mcp_error)?.map_err(to_mcp_error)?;
+    })
+    .await
+    .map_err(to_mcp_error)?
+    .map_err(to_mcp_error)?;
 
     serde_json::to_string_pretty(&result).map_err(to_mcp_error)
 }
@@ -296,16 +334,25 @@ pub async fn handle_evaluate(state: &State, params: EvaluateParams) -> Result<St
 /// Handler for `mobius_suggest`.
 pub async fn handle_suggest(state: &State, params: SuggestParams) -> Result<String, ErrorData> {
     let s = state.read().await;
-    let cfg = s.config.as_ref()
+    let cfg = s
+        .config
+        .as_ref()
         .ok_or_else(|| invalid_params("No mobius.toml found. Run 'mobius init' first."))?;
 
     let metric = params.metric.as_deref().unwrap_or("f1");
     let history = s.store.load_all().map_err(to_mcp_error)?;
 
-    let strategy = GradientGuidedTuning::new(
+    let strategy_name = params
+        .strategy
+        .as_deref()
+        .or_else(|| cfg.agent.strategies.first().map(|s| s.as_str()))
+        .unwrap_or("gradient_guided");
+    let strategy = build_strategy(
+        strategy_name,
         cfg.agent.plateau_window,
         cfg.agent.plateau_threshold,
-    );
+    )
+    .map_err(to_mcp_error)?;
 
     let production_config = build_production_config(&cfg.experiment.sweep_space);
 
@@ -337,7 +384,9 @@ pub async fn handle_sweep(state: &State, params: SweepParams) -> Result<String, 
 
     let spec: HashMap<String, Vec<serde_json::Value>> = serde_json::from_value(params.spec)
         .map_err(|e| invalid_params(format!("Invalid sweep spec: {e}")))?;
-    let command = params.command.unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
+    let command = params
+        .command
+        .unwrap_or_else(|| "echo '{\"f1\": 0.0}'".into());
     let timeout = params.timeout_secs.unwrap_or(600);
 
     let results = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<serde_json::Value>> {
@@ -362,7 +411,10 @@ pub async fn handle_sweep(state: &State, params: SweepParams) -> Result<String, 
             let result = ExperimentResult {
                 id: format!("sweep-{count:04}"),
                 timestamp: chrono::Utc::now(),
-                config: ExperimentConfig { parameters: params.clone(), metadata: HashMap::new() },
+                config: ExperimentConfig {
+                    parameters: params.clone(),
+                    metadata: HashMap::new(),
+                },
                 metrics: parsed.metrics.clone(),
                 per_segment: HashMap::new(),
                 duration_secs: output.duration_secs,
@@ -388,7 +440,10 @@ pub async fn handle_sweep(state: &State, params: SweepParams) -> Result<String, 
             entry["rank"] = serde_json::json!(i + 1);
         }
         Ok(all)
-    }).await.map_err(to_mcp_error)?.map_err(to_mcp_error)?;
+    })
+    .await
+    .map_err(to_mcp_error)?
+    .map_err(to_mcp_error)?;
 
     let out = serde_json::json!({
         "total_configs": results.len(),
@@ -402,7 +457,9 @@ pub async fn handle_sweep(state: &State, params: SweepParams) -> Result<String, 
 pub async fn handle_agent(state: &State, params: AgentParams) -> Result<String, ErrorData> {
     let (cfg, mobius_dir) = {
         let s = state.read().await;
-        let cfg = s.config.clone()
+        let cfg = s
+            .config
+            .clone()
             .ok_or_else(|| invalid_params("No mobius.toml found. Run 'mobius init' first."))?;
         (cfg, s.mobius_dir.clone())
     };
@@ -415,8 +472,8 @@ pub async fn handle_agent(state: &State, params: AgentParams) -> Result<String, 
     let report = tokio::task::spawn_blocking(move || -> anyhow::Result<serde_json::Value> {
         let store = JsonlStore::new(mobius_dir.join("history.jsonl"))?;
         let learning_store = LearningStore::new(mobius_dir.join("learnings.jsonl"))?;
-        let budget = BudgetGuard::new(budget_limit)
-            .with_state_file(mobius_dir.join("budget.json"))?;
+        let budget =
+            BudgetGuard::new(budget_limit).with_state_file(mobius_dir.join("budget.json"))?;
 
         let agent_config = AgentConfig {
             max_iterations,
@@ -430,14 +487,20 @@ pub async fn handle_agent(state: &State, params: AgentParams) -> Result<String, 
             timeout_secs: 600,
         };
 
-        let strategy = GradientGuidedTuning::new(
+        let strategy_name = params
+            .strategy
+            .as_deref()
+            .or_else(|| cfg.agent.strategies.first().map(|s| s.as_str()))
+            .unwrap_or("gradient_guided");
+        let strategy = build_strategy(
+            strategy_name,
             cfg.agent.plateau_window,
             cfg.agent.plateau_threshold,
-        );
+        )?;
 
         let mut agent = AgentLoop::new(
             agent_config,
-            Box::new(strategy),
+            strategy,
             Box::new(SubprocessBackend),
             Box::new(store),
             learning_store,
@@ -459,7 +522,10 @@ pub async fn handle_agent(state: &State, params: AgentParams) -> Result<String, 
             })),
             "total_cost": report.total_cost,
         }))
-    }).await.map_err(to_mcp_error)?.map_err(to_mcp_error)?;
+    })
+    .await
+    .map_err(to_mcp_error)?
+    .map_err(to_mcp_error)?;
 
     // Reload budget from disk after agent loop
     {
@@ -483,12 +549,14 @@ pub async fn handle_pareto(state: &State, params: ParetoParams) -> Result<String
 
     let experiments: Vec<serde_json::Value> = front
         .iter()
-        .map(|r| serde_json::json!({
-            "id": r.id,
-            params.x_metric.clone(): r.metrics.get(&params.x_metric),
-            params.y_metric.clone(): r.metrics.get(&params.y_metric),
-            "config": r.config.parameters,
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                params.x_metric.clone(): r.metrics.get(&params.x_metric),
+                params.y_metric.clone(): r.metrics.get(&params.y_metric),
+                "config": r.config.parameters,
+            })
+        })
         .collect();
 
     let result = serde_json::json!({
@@ -509,13 +577,21 @@ pub async fn handle_budget(state: &State, params: BudgetParams) -> Result<String
         if let Some(spend) = params.record_spend {
             s.budget.record_spend(spend).map_err(to_mcp_error)?;
         }
-        cost_per_run = s.config.as_ref().map(|c| c.experiment.cost_per_run).unwrap_or(1.0);
+        cost_per_run = s
+            .config
+            .as_ref()
+            .map(|c| c.experiment.cost_per_run)
+            .unwrap_or(1.0);
         let result = budget_json(&s.budget, cost_per_run);
         return serde_json::to_string_pretty(&result).map_err(to_mcp_error);
     }
 
     let s = state.read().await;
-    cost_per_run = s.config.as_ref().map(|c| c.experiment.cost_per_run).unwrap_or(1.0);
+    cost_per_run = s
+        .config
+        .as_ref()
+        .map(|c| c.experiment.cost_per_run)
+        .unwrap_or(1.0);
     let result = budget_json(&s.budget, cost_per_run);
     serde_json::to_string_pretty(&result).map_err(to_mcp_error)
 }
@@ -526,12 +602,18 @@ pub async fn handle_learnings(state: &State, params: LearningsParams) -> Result<
     let metric = params.metric.as_deref().unwrap_or("f1");
 
     let gradients = if let Some(param) = &params.param {
-        let g = s.learning_store.get_param_gradient(param, metric).map_err(to_mcp_error)?;
+        let g = s
+            .learning_store
+            .get_param_gradient(param, metric)
+            .map_err(to_mcp_error)?;
         vec![g]
     } else if let Some(cfg) = &s.config {
         let mut gs = Vec::new();
         for param in cfg.experiment.sweep_space.keys() {
-            let g = s.learning_store.get_param_gradient(param, metric).map_err(to_mcp_error)?;
+            let g = s
+                .learning_store
+                .get_param_gradient(param, metric)
+                .map_err(to_mcp_error)?;
             gs.push(g);
         }
         gs
@@ -649,4 +731,483 @@ fn cartesian_product(lists: &[&Vec<serde_json::Value>]) -> Vec<Vec<serde_json::V
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::SharedState;
+    use mobius_claw::learning::Learning;
+    use mobius_claw::learning::ParamDelta;
+    use mobius_core::config::{
+        AgentSection, BenchSection, ComputeSection, ExperimentSection, MobiusConfig, ProjectConfig,
+    };
+    use mobius_core::experiment::{ExperimentConfig, ExperimentResult, ExperimentStatus};
+    use tempfile::TempDir;
+
+    fn test_config() -> MobiusConfig {
+        let mut targets = HashMap::new();
+        targets.insert("f1".into(), 0.85);
+
+        let mut sweep_space = HashMap::new();
+        sweep_space.insert(
+            "learning_rate".into(),
+            vec![
+                serde_json::json!(0.001),
+                serde_json::json!(0.01),
+                serde_json::json!(0.1),
+            ],
+        );
+        sweep_space.insert(
+            "batch_size".into(),
+            vec![serde_json::json!(16), serde_json::json!(32)],
+        );
+
+        MobiusConfig {
+            project: ProjectConfig {
+                name: "test".into(),
+                version: "0.1.0".into(),
+            },
+            experiment: ExperimentSection {
+                budget_usd: 20.0,
+                cost_per_run: 1.0,
+                targets,
+                sweep_space,
+            },
+            bench: BenchSection::default(),
+            compute: ComputeSection::default(),
+            agent: AgentSection::default(),
+        }
+    }
+
+    fn test_state(dir: &TempDir) -> State {
+        SharedState::with_dir(dir.path().to_path_buf(), Some(test_config())).unwrap()
+    }
+
+    fn test_state_no_config(dir: &TempDir) -> State {
+        SharedState::with_dir(dir.path().to_path_buf(), None).unwrap()
+    }
+
+    fn make_result(id: &str, f1: f64) -> ExperimentResult {
+        let mut metrics = HashMap::new();
+        metrics.insert("f1".into(), f1);
+        metrics.insert("precision".into(), f1 + 0.05);
+        ExperimentResult {
+            id: id.to_string(),
+            timestamp: chrono::Utc::now(),
+            config: ExperimentConfig {
+                parameters: {
+                    let mut p = HashMap::new();
+                    p.insert("learning_rate".into(), serde_json::json!(0.01));
+                    p.insert("batch_size".into(), serde_json::json!(32));
+                    p
+                },
+                metadata: HashMap::new(),
+            },
+            metrics,
+            per_segment: HashMap::new(),
+            duration_secs: 10.0,
+            cost_usd: Some(1.0),
+            status: ExperimentStatus::Success,
+            error: None,
+        }
+    }
+
+    async fn seed_history(state: &State, results: &[ExperimentResult]) {
+        let mut s = state.write().await;
+        for r in results {
+            s.store.append(r).unwrap();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // handle_status tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_status_empty() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let result = handle_status(&state, StatusParams { metric: None })
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["experiment_count"], 0);
+        assert!(v["best_config"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_handle_status_with_experiments() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        seed_history(
+            &state,
+            &[
+                make_result("exp-1", 0.60),
+                make_result("exp-2", 0.75),
+                make_result("exp-3", 0.70),
+            ],
+        )
+        .await;
+
+        let result = handle_status(&state, StatusParams { metric: None })
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["experiment_count"], 3);
+        assert!(v["best_metrics"]["f1"].as_f64().unwrap() > 0.74);
+    }
+
+    #[tokio::test]
+    async fn test_handle_status_no_config() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state_no_config(&dir);
+        let result = handle_status(&state, StatusParams { metric: None })
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["targets"], serde_json::json!({}));
+    }
+
+    // -----------------------------------------------------------------------
+    // handle_history tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_history_default() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let results: Vec<_> = (0..15)
+            .map(|i| make_result(&format!("exp-{i}"), 0.5 + i as f64 * 0.01))
+            .collect();
+        seed_history(&state, &results).await;
+
+        let result = handle_history(&state, HistoryParams { last: None })
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["count"], 10);
+    }
+
+    #[tokio::test]
+    async fn test_handle_history_custom_limit() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let results: Vec<_> = (0..15)
+            .map(|i| make_result(&format!("exp-{i}"), 0.5))
+            .collect();
+        seed_history(&state, &results).await;
+
+        let result = handle_history(&state, HistoryParams { last: Some(5) })
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["count"], 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // handle_suggest tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_suggest_insufficient() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        seed_history(&state, &[make_result("exp-1", 0.5)]).await;
+
+        let result = handle_suggest(
+            &state,
+            SuggestParams {
+                metric: None,
+                strategy: None,
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(v["rationale"].as_str().unwrap().contains("Insufficient"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_suggest_with_history() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+
+        let mut r1 = make_result("exp-1", 0.50);
+        r1.config
+            .parameters
+            .insert("learning_rate".into(), serde_json::json!(0.001));
+        let mut r2 = make_result("exp-2", 0.65);
+        r2.config
+            .parameters
+            .insert("learning_rate".into(), serde_json::json!(0.01));
+        let mut r3 = make_result("exp-3", 0.70);
+        r3.config
+            .parameters
+            .insert("learning_rate".into(), serde_json::json!(0.1));
+        seed_history(&state, &[r1, r2, r3]).await;
+
+        let result = handle_suggest(
+            &state,
+            SuggestParams {
+                metric: None,
+                strategy: None,
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(!v["full_config"].as_object().unwrap().is_empty());
+        assert!(!v["rationale"].as_str().unwrap().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // handle_pareto tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_pareto_empty() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let result = handle_pareto(
+            &state,
+            ParetoParams {
+                x_metric: "f1".into(),
+                y_metric: "precision".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["front_size"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_pareto_with_data() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        seed_history(
+            &state,
+            &[
+                make_result("exp-1", 0.80),
+                make_result("exp-2", 0.70),
+                make_result("exp-3", 0.90),
+            ],
+        )
+        .await;
+
+        let result = handle_pareto(
+            &state,
+            ParetoParams {
+                x_metric: "f1".into(),
+                y_metric: "precision".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(v["front_size"].as_u64().unwrap() >= 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // handle_budget tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_budget_read() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let result = handle_budget(
+            &state,
+            BudgetParams {
+                set_limit: None,
+                record_spend: None,
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["limit"], 20.0);
+        assert_eq!(v["spent"], 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_budget_set_limit() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let result = handle_budget(
+            &state,
+            BudgetParams {
+                set_limit: Some(50.0),
+                record_spend: None,
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["limit"], 50.0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_budget_record_spend() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let result = handle_budget(
+            &state,
+            BudgetParams {
+                set_limit: None,
+                record_spend: Some(5.0),
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["spent"], 5.0);
+        assert_eq!(v["remaining"], 15.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // handle_learnings tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_handle_learnings_empty() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+        let result = handle_learnings(
+            &state,
+            LearningsParams {
+                param: None,
+                metric: None,
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(!v["gradients"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_learnings_with_data() {
+        let dir = TempDir::new().unwrap();
+        let state = test_state(&dir);
+
+        // Seed a learning entry
+        {
+            let mut s = state.write().await;
+            let learning = Learning {
+                changed_params: vec![ParamDelta {
+                    param: "learning_rate".into(),
+                    old_value: serde_json::json!(0.001),
+                    new_value: serde_json::json!(0.01),
+                }],
+                metric_deltas: {
+                    let mut m = HashMap::new();
+                    m.insert("f1".into(), 0.1);
+                    m
+                },
+                timestamp: chrono::Utc::now(),
+            };
+            s.learning_store.append(&learning).unwrap();
+        }
+
+        let result = handle_learnings(
+            &state,
+            LearningsParams {
+                param: Some("learning_rate".into()),
+                metric: None,
+            },
+        )
+        .await
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["gradients"].as_array().unwrap().len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Helper function tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_cartesian_product_empty() {
+        let result = cartesian_product(&[]);
+        assert_eq!(result, vec![Vec::<serde_json::Value>::new()]);
+    }
+
+    #[test]
+    fn test_cartesian_product_single() {
+        let vals = vec![
+            serde_json::json!(1),
+            serde_json::json!(2),
+            serde_json::json!(3),
+        ];
+        let result = cartesian_product(&[&vals]);
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_cartesian_product_multi() {
+        let a = vec![serde_json::json!(1), serde_json::json!(2)];
+        let b = vec![
+            serde_json::json!("x"),
+            serde_json::json!("y"),
+            serde_json::json!("z"),
+        ];
+        let result = cartesian_product(&[&a, &b]);
+        assert_eq!(result.len(), 6);
+    }
+
+    #[test]
+    fn test_merge_params_defaults_and_overrides() {
+        let mut sweep = HashMap::new();
+        sweep.insert(
+            "lr".into(),
+            vec![serde_json::json!(0.01), serde_json::json!(0.1)],
+        );
+        sweep.insert("bs".into(), vec![serde_json::json!(16)]);
+
+        let mut overrides = HashMap::new();
+        overrides.insert("lr".into(), serde_json::json!(0.5));
+
+        let merged = merge_params(&sweep, &overrides);
+        assert_eq!(merged["lr"], serde_json::json!(0.5));
+        assert_eq!(merged["bs"], serde_json::json!(16));
+    }
+
+    #[test]
+    fn test_parse_overrides_valid() {
+        let v = Some(serde_json::json!({"a": 1}));
+        let result = parse_overrides(&v).unwrap();
+        assert_eq!(result["a"], serde_json::json!(1));
+    }
+
+    #[test]
+    fn test_parse_overrides_invalid() {
+        let v = Some(serde_json::json!("not an object"));
+        assert!(parse_overrides(&v).is_err());
+    }
+
+    #[test]
+    fn test_parse_overrides_none() {
+        let result = parse_overrides(&None).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_build_production_config() {
+        let mut sweep = HashMap::new();
+        sweep.insert("a".into(), vec![serde_json::json!(1), serde_json::json!(2)]);
+        sweep.insert("b".into(), vec![serde_json::json!("x")]);
+        let config = build_production_config(&sweep);
+        assert_eq!(config["a"], serde_json::json!(1));
+        assert_eq!(config["b"], serde_json::json!("x"));
+    }
+
+    #[test]
+    fn test_default_dimensions_weights_sum() {
+        let dims = default_dimensions();
+        assert_eq!(dims.len(), 3);
+        let total: f64 = dims.iter().map(|d| d.weight).sum();
+        assert!((total - 1.0).abs() < 0.001);
+    }
 }

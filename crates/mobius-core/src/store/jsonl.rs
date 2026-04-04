@@ -142,7 +142,10 @@ mod tests {
 
         for i in 0..10 {
             store
-                .append(&make_result(&format!("exp-{:03}", i), 0.5 + i as f64 * 0.01))
+                .append(&make_result(
+                    &format!("exp-{:03}", i),
+                    0.5 + i as f64 * 0.01,
+                ))
                 .unwrap();
         }
 

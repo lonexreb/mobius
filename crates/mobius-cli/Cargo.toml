@@ -3,7 +3,10 @@ name = "mobius-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "CLI for autonomous ML experimentation"
+keywords = ["ml", "experiment", "cli", "optimization"]
+categories = ["command-line-utilities", "science"]
 
 [[bin]]
 name = "mobius"
@@ -22,3 +25,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 dirs = "6.0.0"
 chrono.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

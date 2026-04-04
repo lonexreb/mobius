@@ -86,11 +86,7 @@ impl LearningStore {
                     (serde_json::Value::Number(old), serde_json::Value::Number(new)) => {
                         let o = old.as_f64().unwrap_or(0.0);
                         let n = new.as_f64().unwrap_or(0.0);
-                        if n > o {
-                            "increase"
-                        } else {
-                            "decrease"
-                        }
+                        if n > o { "increase" } else { "decrease" }
                     }
                     _ => "unknown",
                 };
@@ -142,10 +138,8 @@ impl LearningStore {
             .collect();
 
         let best_direction = if !increase_deltas.is_empty() && !decrease_deltas.is_empty() {
-            let inc_avg =
-                increase_deltas.iter().sum::<f64>() / increase_deltas.len() as f64;
-            let dec_avg =
-                decrease_deltas.iter().sum::<f64>() / decrease_deltas.len() as f64;
+            let inc_avg = increase_deltas.iter().sum::<f64>() / increase_deltas.len() as f64;
+            let dec_avg = decrease_deltas.iter().sum::<f64>() / decrease_deltas.len() as f64;
             if inc_avg > dec_avg {
                 GradientDirection::IncreaseHelps
             } else {
@@ -168,9 +162,11 @@ impl LearningStore {
         };
 
         // Best value: from observation with highest f1_delta
-        let best_obs = observations
-            .iter()
-            .max_by(|a, b| a.f1_delta.partial_cmp(&b.f1_delta).unwrap_or(std::cmp::Ordering::Equal));
+        let best_obs = observations.iter().max_by(|a, b| {
+            a.f1_delta
+                .partial_cmp(&b.f1_delta)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let best_value = best_obs.map(|o| o.new_value.clone());
 
         let confidence = if observations.len() >= 5 {
@@ -246,8 +242,12 @@ mod tests {
     fn test_append_and_load() {
         let file = NamedTempFile::new().unwrap();
         let mut store = LearningStore::new(file.path()).unwrap();
-        store.append(&make_learning("ball_conf", 0.28, 0.25, 0.02)).unwrap();
-        store.append(&make_learning("ball_conf", 0.25, 0.30, -0.01)).unwrap();
+        store
+            .append(&make_learning("ball_conf", 0.28, 0.25, 0.02))
+            .unwrap();
+        store
+            .append(&make_learning("ball_conf", 0.25, 0.30, -0.01))
+            .unwrap();
         let all = store.load_all().unwrap();
         assert_eq!(all.len(), 2);
     }
@@ -257,8 +257,12 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let mut store = LearningStore::new(file.path()).unwrap();
         // Increasing ball_conf helps
-        store.append(&make_learning("ball_conf", 0.25, 0.28, 0.03)).unwrap();
-        store.append(&make_learning("ball_conf", 0.28, 0.30, 0.02)).unwrap();
+        store
+            .append(&make_learning("ball_conf", 0.25, 0.28, 0.03))
+            .unwrap();
+        store
+            .append(&make_learning("ball_conf", 0.28, 0.30, 0.02))
+            .unwrap();
         let grad = store.get_param_gradient("ball_conf", "f1").unwrap();
         assert_eq!(grad.num_observations, 2);
         assert_eq!(grad.best_direction, GradientDirection::IncreaseHelps);

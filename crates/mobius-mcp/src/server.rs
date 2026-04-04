@@ -13,7 +13,7 @@ use rmcp::model::{
     ReadResourceRequestParams, ReadResourceResult, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::RequestContext;
-use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
+use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 
 /// MCP server exposing Mobius experiment tools and resources.
 ///
@@ -36,7 +36,9 @@ impl MobiusServer {
         }
     }
 
-    #[tool(description = "Get the current status of the Mobius experiment project including experiment count, target metric gaps, best configuration found so far, and budget remaining. Call this first to orient yourself.")]
+    #[tool(
+        description = "Get the current status of the Mobius experiment project including experiment count, target metric gaps, best configuration found so far, and budget remaining. Call this first to orient yourself."
+    )]
     async fn mobius_status(
         &self,
         Parameters(params): Parameters<tools::StatusParams>,
@@ -45,7 +47,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "List recent experiment results with their configs, metrics, duration, and status. Use to understand what has been tried and the trajectory of improvement.")]
+    #[tool(
+        description = "List recent experiment results with their configs, metrics, duration, and status. Use to understand what has been tried and the trajectory of improvement."
+    )]
     async fn mobius_history(
         &self,
         Parameters(params): Parameters<tools::HistoryParams>,
@@ -54,7 +58,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Execute a single ML experiment with optional parameter overrides. Returns the experiment ID, metrics, and status. Each run costs budget.")]
+    #[tool(
+        description = "Execute a single ML experiment with optional parameter overrides. Returns the experiment ID, metrics, and status. Each run costs budget."
+    )]
     async fn mobius_run(
         &self,
         Parameters(params): Parameters<tools::RunParams>,
@@ -63,7 +69,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Evaluate prediction results against ground truth using multi-dimensional scoring (detection F1, classification accuracy, timestamp precision). Returns bench score and per-dimension breakdown.")]
+    #[tool(
+        description = "Evaluate prediction results against ground truth using multi-dimensional scoring (detection F1, classification accuracy, timestamp precision). Returns bench score and per-dimension breakdown."
+    )]
     async fn mobius_evaluate(
         &self,
         Parameters(params): Parameters<tools::EvaluateParams>,
@@ -72,7 +80,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Get the next experiment configuration suggestion from the gradient-guided tuning strategy. Uses accumulated learning signals to propose the most promising parameter change.")]
+    #[tool(
+        description = "Get the next experiment configuration suggestion from the gradient-guided tuning strategy. Uses accumulated learning signals to propose the most promising parameter change."
+    )]
     async fn mobius_suggest(
         &self,
         Parameters(params): Parameters<tools::SuggestParams>,
@@ -81,7 +91,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Run a cartesian product parameter sweep across multiple parameter values. Returns all results ranked by primary metric. Use for systematic exploration.")]
+    #[tool(
+        description = "Run a cartesian product parameter sweep across multiple parameter values. Returns all results ranked by primary metric. Use for systematic exploration."
+    )]
     async fn mobius_sweep(
         &self,
         Parameters(params): Parameters<tools::SweepParams>,
@@ -90,7 +102,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Start the autonomous experiment agent loop. The agent iterates through ORIENT-PROPOSE-EXECUTE-EVALUATE-LEARN-DECIDE cycles until a stop condition (targets met, budget exhausted, max iterations). Long-running operation.")]
+    #[tool(
+        description = "Start the autonomous experiment agent loop. The agent iterates through ORIENT-PROPOSE-EXECUTE-EVALUATE-LEARN-DECIDE cycles until a stop condition (targets met, budget exhausted, max iterations). Long-running operation."
+    )]
     async fn mobius_agent(
         &self,
         Parameters(params): Parameters<tools::AgentParams>,
@@ -99,7 +113,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Find Pareto-optimal experiments across two metrics. Returns experiments that are not dominated on both metrics simultaneously.")]
+    #[tool(
+        description = "Find Pareto-optimal experiments across two metrics. Returns experiments that are not dominated on both metrics simultaneously."
+    )]
     async fn mobius_pareto(
         &self,
         Parameters(params): Parameters<tools::ParetoParams>,
@@ -108,7 +124,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Check or modify the experiment budget. Returns current spend, limit, remaining budget, and estimated experiments remaining.")]
+    #[tool(
+        description = "Check or modify the experiment budget. Returns current spend, limit, remaining budget, and estimated experiments remaining."
+    )]
     async fn mobius_budget(
         &self,
         Parameters(params): Parameters<tools::BudgetParams>,
@@ -117,7 +135,9 @@ impl MobiusServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Query the learning store for gradient signals on parameters. Shows which parameters have been explored, their impact direction, and confidence level. Use to understand what the system has learned.")]
+    #[tool(
+        description = "Query the learning store for gradient signals on parameters. Shows which parameters have been explored, their impact direction, and confidence level. Use to understand what the system has learned."
+    )]
     async fn mobius_learnings(
         &self,
         Parameters(params): Parameters<tools::LearningsParams>,

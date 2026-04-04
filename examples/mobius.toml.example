@@ -1,23 +1,48 @@
+# =============================================================================
+# Mobius Configuration
+# =============================================================================
+# This file configures experiment parameters, evaluation, and the agent loop.
+# Generate with: mobius init
+
 [project]
+# Project name (string, required)
 name = "my-ml-project"
+# Semantic version (string, default: "0.1.0")
 version = "0.1.0"
 
+# -----------------------------------------------------------------------------
+# Experiment settings
+# -----------------------------------------------------------------------------
 [experiment]
+# Total budget in USD for all experiment runs (float, default: 20.0)
 budget_usd = 20.0
+# Estimated cost per experiment run in USD (float, default: 1.0)
 cost_per_run = 1.0
 
+# Target metric values. The agent stops when ALL targets are met.
+# Keys must match metric names in your pipeline's JSON output.
 [experiment.targets]
 f1 = 0.85
 precision = 0.90
 
+# Parameter search space. Each key maps to an array of values to try.
+# The agent, sweep, and suggest commands sample from this space.
 [experiment.sweep_space]
 learning_rate = [0.001, 0.01, 0.1]
 batch_size = [16, 32, 64]
 
+# -----------------------------------------------------------------------------
+# Evaluation / Benchmarking
+# -----------------------------------------------------------------------------
 [bench]
+# Maximum time difference (seconds) to match a prediction to ground truth
+# (float, default: 6.0)
 match_window = 6.0
+# Directory for storing evaluation run artifacts (string, default: "runs/")
 store_path = "runs/"
 
+# Scoring dimensions. Weights should sum to 1.0.
+# Available scorers: "f1", "accuracy", "timestamp_mae"
 [[bench.dimensions]]
 name = "Detection"
 weight = 0.40
@@ -33,10 +58,25 @@ name = "Timestamp"
 weight = 0.30
 scorer = "timestamp_mae"
 
+# -----------------------------------------------------------------------------
+# Compute backend
+# -----------------------------------------------------------------------------
 [compute]
+# Backend type (string, default: "local")
+# Currently only "local" (subprocess) is supported.
 backend = "local"
+# Optional GPU type hint (e.g., "A100", "T4")
+# gpu_type = "A100"
 
+# -----------------------------------------------------------------------------
+# Agent loop settings
+# -----------------------------------------------------------------------------
 [agent]
-strategies = ["parameter_tuning", "algorithm_tuning"]
+# Strategy to use: "gradient_guided", "random", "grid"
+# The first entry is the default. (array of strings)
+strategies = ["gradient_guided"]
+# Number of recent experiments to check for plateau (int, default: 5)
 plateau_window = 5
+# Minimum metric variance to consider progress (float, default: 0.02)
+# If variance across the plateau_window is below this, the agent explores new dimensions.
 plateau_threshold = 0.02

@@ -12,11 +12,7 @@ pub enum HookAction {
 /// Pre-execution hook — runs before each experiment.
 pub trait PreExecuteHook: Send + Sync {
     fn name(&self) -> &str;
-    fn check(
-        &self,
-        budget: &BudgetGuard,
-        cost: f64,
-    ) -> anyhow::Result<HookAction>;
+    fn check(&self, budget: &BudgetGuard, cost: f64) -> anyhow::Result<HookAction>;
 }
 
 /// Post-evaluation hook — runs after each experiment is scored.
@@ -94,10 +90,7 @@ impl PostEvaluateHook for RegressionDetectionHook {
         if delta < -self.threshold {
             Ok(HookAction::Warn(format!(
                 "Regression: {} dropped {:.1} points ({:.4} → {:.4}). REVERT recommended.",
-                primary_metric,
-                -delta,
-                prev_best,
-                current
+                primary_metric, -delta, prev_best, current
             )))
         } else {
             Ok(HookAction::Proceed)

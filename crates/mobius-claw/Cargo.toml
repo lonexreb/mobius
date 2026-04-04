@@ -3,7 +3,10 @@ name = "mobius-claw"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Autonomous ML experiment agent with gradient-based learning"
+keywords = ["ml", "agent", "optimization", "gradient"]
+categories = ["science"]
 
 [dependencies]
 mobius-core = { path = "../mobius-core" }

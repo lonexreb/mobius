@@ -54,10 +54,7 @@ impl Evaluator {
         let grade = Grade::from_score(bench_score);
 
         let mut flags = std::collections::HashMap::new();
-        flags.insert(
-            mobius_core::schema::Flag::Green,
-            match_result.matched.len(),
-        );
+        flags.insert(mobius_core::schema::Flag::Green, match_result.matched.len());
         flags.insert(
             mobius_core::schema::Flag::Red,
             match_result.false_positives.len() + match_result.missed.len(),

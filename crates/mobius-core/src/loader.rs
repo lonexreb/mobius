@@ -111,7 +111,13 @@ fn adapt_prediction(v: &serde_json::Value) -> Option<Prediction> {
     let source = obj.get("source").and_then(|v| v.as_str()).map(String::from);
 
     let mut attributes = HashMap::new();
-    for key in ["shot_type", "shooter_jersey", "shooter_team", "jersey", "team"] {
+    for key in [
+        "shot_type",
+        "shooter_jersey",
+        "shooter_team",
+        "jersey",
+        "team",
+    ] {
         if let Some(val) = obj.get(key) {
             attributes.insert(key.to_string(), val.clone());
         }
@@ -205,11 +211,7 @@ mod tests {
     #[test]
     fn test_load_predictions_wrapped() {
         let mut f = NamedTempFile::new().unwrap();
-        write!(
-            f,
-            r#"{{"shots": [{{"time_sec": 5.0, "label": "make"}}]}}"#
-        )
-        .unwrap();
+        write!(f, r#"{{"shots": [{{"time_sec": 5.0, "label": "make"}}]}}"#).unwrap();
         let preds = load_predictions(f.path()).unwrap();
         assert_eq!(preds.len(), 1);
         assert!((preds[0].timestamp.unwrap() - 5.0).abs() < 0.01);

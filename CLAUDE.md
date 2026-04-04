@@ -20,7 +20,7 @@ mobius/
     mobius-bench/          # Evaluation: matchers, dimension scorers, multi-dim evaluator
     mobius-claw/           # Autonomous agent: strategy, learning, hooks, agent loop
     mobius-cli/            # CLI binary: init, evaluate, status, history, run, suggest, sweep, agent
-    mobius-mcp/            # MCP server (Phase 3 — stub)
+    mobius-mcp/            # MCP server: 10 tools, 3 resources, rmcp over stdio
 ```
 
 ### Crate Dependency Graph
@@ -30,28 +30,30 @@ mobius-core  (no internal deps)
     ├── mobius-bench  (core)
     │       └── mobius-claw  (core + bench)
     │               └── mobius-cli  (core + bench + claw)
-    └── mobius-mcp   (core)
+    └── mobius-mcp   (core + bench + claw)
 ```
 
 ### Crate Responsibilities
 
 | Crate | Key Types |
 |-------|-----------|
-| `mobius-core` | `ExperimentResult`, `ExperimentConfig`, `MobiusConfig`, `BudgetGuard`, `GroundTruth`, `Prediction`, `BenchResult`, `ComputeBackend` trait, `ExperimentStore` trait |
+| `mobius-core` | `ExperimentResult`, `ExperimentConfig`, `MobiusConfig`, `BudgetGuard`, `GroundTruth`, `Prediction`, `BenchResult`, `ComputeBackend`/`AsyncComputeBackend` traits, `SyncAdapter`, `ParallelBackend`, `ExperimentStore` trait |
 | `mobius-bench` | `Evaluator`, `Matcher` trait, `DimensionScorer` trait, `GreedyTimestampMatcher`, `F1Scorer`, `ClassificationAccuracyScorer`, `TimestampMaeScorer` |
-| `mobius-claw` | `AgentLoop`, `Strategy` trait, `GradientGuidedTuning`, `LearningStore`, `PreExecuteHook`/`PostEvaluateHook` traits, `Decision`, `StopReason` |
-| `mobius-cli` | Clap commands: init, evaluate, status, history, run, suggest, sweep, agent |
-| `mobius-mcp` | Phase 3 stub |
+| `mobius-claw` | `AgentLoop`, `Strategy` trait, `GradientGuidedTuning`, `RandomSearch`, `GridSearch`, `build_strategy()`, `LearningStore`, `PreExecuteHook`/`PostEvaluateHook` traits, `Decision`, `StopReason` |
+| `mobius-cli` | Clap commands: init, evaluate, status, history, run, suggest, sweep, agent (`--strategy` flag) |
+| `mobius-mcp` | `MobiusServer`, `SharedState`, 10 tool handlers, 3 resource handlers |
 
 ## Code Quality
 
 ```bash
 cargo fmt --all                                          # Format
 cargo clippy --workspace --all-targets -- -D warnings    # Lint (zero warnings)
-cargo test --workspace                                   # Test (32 passing)
-cargo test -p mobius-core                                # Core only (15 tests)
+cargo test --workspace                                   # Test (82 passing)
+cargo test -p mobius-core                                # Core only (17 tests)
 cargo test -p mobius-bench                               # Bench only (4 tests)
-cargo test -p mobius-claw                                # Claw only (13 tests)
+cargo test -p mobius-claw                                # Claw only (19 tests)
+cargo test -p mobius-cli                                 # CLI only (8 tests)
+cargo test -p mobius-mcp                                 # MCP only (34 tests)
 ```
 
 ### Rules
@@ -71,10 +73,10 @@ cargo test -p mobius-claw                                # Claw only (13 tests)
 
 All core abstractions are traits for swappable implementations:
 - `ExperimentStore` (default: `JsonlStore`)
-- `ComputeBackend` (default: `SubprocessBackend`)
+- `ComputeBackend` / `AsyncComputeBackend` (default: `SubprocessBackend`, async via `SyncAdapter`)
 - `Matcher` (default: `GreedyTimestampMatcher`)
 - `DimensionScorer` (F1, accuracy, timestamp MAE)
-- `Strategy` (default: `GradientGuidedTuning`)
+- `Strategy` (`GradientGuidedTuning`, `RandomSearch`, `GridSearch` via `build_strategy()`)
 - `PreExecuteHook` / `PostEvaluateHook`
 
 ### The 7-Step Agent Loop
@@ -118,7 +120,8 @@ Mobius stores state in `~/.mobius/`:
 ### Adding a Strategy
 
 1. Implement `Strategy` trait in `crates/mobius-claw/src/strategy.rs`
-2. Wire into `crates/mobius-cli/src/commands/agent.rs`
+2. Register in `build_strategy()` factory in the same file
+3. Available via CLI `--strategy name` and MCP `strategy` param automatically
 
 ### Adding a Hook
 

@@ -29,6 +29,140 @@ pub trait Strategy: Send + Sync {
     fn suggest(&self, ctx: &StrategyContext) -> anyhow::Result<Suggestion>;
 }
 
+/// Check whether an exact config has already been tried in history.
+pub fn config_already_tried(
+    config: &HashMap<String, serde_json::Value>,
+    history: &[ExperimentResult],
+) -> bool {
+    history.iter().any(|r| {
+        config
+            .iter()
+            .all(|(k, v)| r.config.parameters.get(k) == Some(v))
+    })
+}
+
+/// Build a strategy by name.
+///
+/// Known strategies: `"gradient_guided"`, `"random"`, `"grid"`.
+pub fn build_strategy(
+    name: &str,
+    plateau_window: usize,
+    plateau_threshold: f64,
+) -> anyhow::Result<Box<dyn Strategy>> {
+    match name {
+        "gradient_guided" | "gradient_guided_tuning" => Ok(Box::new(GradientGuidedTuning::new(
+            plateau_window,
+            plateau_threshold,
+        ))),
+        "random" | "random_search" => Ok(Box::new(RandomSearch)),
+        "grid" | "grid_search" => Ok(Box::new(GridSearch)),
+        _ => anyhow::bail!("Unknown strategy: {name}"),
+    }
+}
+
+/// Pure random parameter sampling from the sweep space.
+///
+/// Picks a random value for every parameter on each call.
+/// Useful as a baseline or for initial exploration.
+pub struct RandomSearch;
+
+impl Strategy for RandomSearch {
+    fn name(&self) -> &str {
+        "random"
+    }
+
+    fn suggest(&self, ctx: &StrategyContext) -> anyhow::Result<Suggestion> {
+        let mut rng = rand::rng();
+        let mut config_params = HashMap::new();
+        let mut changed = HashMap::new();
+
+        for (param, values) in ctx.sweep_space {
+            let val = values
+                .choose(&mut rng)
+                .ok_or_else(|| anyhow::anyhow!("Empty values for {}", param))?;
+            config_params.insert(param.clone(), val.clone());
+            changed.insert(param.clone(), val.clone());
+        }
+
+        Ok(Suggestion {
+            config: ExperimentConfig {
+                parameters: config_params,
+                metadata: HashMap::new(),
+            },
+            changed_params: changed,
+            rationale: "Random exploration across all parameters.".into(),
+        })
+    }
+}
+
+/// Systematic grid search over the sweep space.
+///
+/// Enumerates all combinations and skips already-tried configs.
+/// Returns an error when all combinations have been exhausted.
+pub struct GridSearch;
+
+impl GridSearch {
+    fn cartesian_product(
+        sweep_space: &HashMap<String, Vec<serde_json::Value>>,
+    ) -> Vec<HashMap<String, serde_json::Value>> {
+        let keys: Vec<&String> = sweep_space.keys().collect();
+        let values: Vec<&Vec<serde_json::Value>> = keys.iter().map(|k| &sweep_space[*k]).collect();
+
+        if values.is_empty() {
+            return vec![HashMap::new()];
+        }
+
+        let mut combos = vec![HashMap::new()];
+        for (i, vals) in values.iter().enumerate() {
+            let mut new_combos = Vec::new();
+            for combo in &combos {
+                for v in *vals {
+                    let mut c = combo.clone();
+                    c.insert(keys[i].clone(), v.clone());
+                    new_combos.push(c);
+                }
+            }
+            combos = new_combos;
+        }
+        combos
+    }
+}
+
+impl Strategy for GridSearch {
+    fn name(&self) -> &str {
+        "grid"
+    }
+
+    fn suggest(&self, ctx: &StrategyContext) -> anyhow::Result<Suggestion> {
+        let combos = Self::cartesian_product(ctx.sweep_space);
+
+        for combo in &combos {
+            if !config_already_tried(combo, ctx.history) {
+                let mut changed = HashMap::new();
+                for (k, v) in combo {
+                    if ctx.production_config.get(k) != Some(v) {
+                        changed.insert(k.clone(), v.clone());
+                    }
+                }
+                return Ok(Suggestion {
+                    config: ExperimentConfig {
+                        parameters: combo.clone(),
+                        metadata: HashMap::new(),
+                    },
+                    changed_params: changed,
+                    rationale: format!(
+                        "Grid search: config {} of {}",
+                        ctx.history.len() + 1,
+                        combos.len()
+                    ),
+                });
+            }
+        }
+
+        anyhow::bail!("Grid search exhausted all {} combinations", combos.len())
+    }
+}
+
 /// Gradient-guided parameter tuning strategy.
 ///
 /// Port of `pipeline_optimizer.py:cmd_suggest` algorithm.
@@ -69,11 +203,7 @@ impl GradientGuidedTuning {
         config: &HashMap<String, serde_json::Value>,
         history: &[ExperimentResult],
     ) -> bool {
-        history.iter().any(|r| {
-            config
-                .iter()
-                .all(|(k, v)| r.config.parameters.get(k) == Some(v))
-        })
+        config_already_tried(config, history)
     }
 }
 
@@ -116,20 +246,18 @@ impl Strategy for GradientGuidedTuning {
             .map(|b| b.config.parameters.clone())
             .unwrap_or_else(|| ctx.production_config.clone());
 
-        let recent: Vec<&ExperimentResult> = ctx
-            .history
-            .iter()
-            .rev()
-            .take(self.plateau_window)
-            .collect();
+        let recent: Vec<&ExperimentResult> =
+            ctx.history.iter().rev().take(self.plateau_window).collect();
 
-        let untried = ctx.learning_store.get_untried_dimensions(
-            ctx.history,
-            ctx.sweep_space,
-        );
+        let untried = ctx
+            .learning_store
+            .get_untried_dimensions(ctx.history, ctx.sweep_space);
 
         // Case 2: Plateau — explore untried or expand range
-        if self.is_plateaued(&recent.iter().copied().cloned().collect::<Vec<_>>(), ctx.primary_metric) {
+        if self.is_plateaued(
+            &recent.iter().copied().cloned().collect::<Vec<_>>(),
+            ctx.primary_metric,
+        ) {
             if let Some(param) = untried.first()
                 && let Some(values) = ctx.sweep_space.get(param)
                 && let Some(val) = values.choose(&mut rng)
@@ -144,10 +272,7 @@ impl Strategy for GradientGuidedTuning {
                         metadata: HashMap::new(),
                     },
                     changed_params: changed,
-                    rationale: format!(
-                        "Plateau detected. Exploring untried dimension: {}",
-                        param
-                    ),
+                    rationale: format!("Plateau detected. Exploring untried dimension: {}", param),
                 });
             }
             // Fallback: expand range of most impactful param
@@ -157,14 +282,17 @@ impl Strategy for GradientGuidedTuning {
         // Case 3: Gradient-guided suggestion
         let mut gradients = Vec::new();
         for param in ctx.sweep_space.keys() {
-            let grad = ctx.learning_store.get_param_gradient(param, ctx.primary_metric)?;
+            let grad = ctx
+                .learning_store
+                .get_param_gradient(param, ctx.primary_metric)?;
             if grad.num_observations > 0 {
                 gradients.push(grad);
             }
         }
 
         // 50% chance: explore untried dimension instead
-        if !untried.is_empty() && rand::random::<bool>()
+        if !untried.is_empty()
+            && rand::random::<bool>()
             && let Some(param) = untried.first()
             && let Some(values) = ctx.sweep_space.get(param)
             && let Some(val) = values.choose(&mut rng)
@@ -204,14 +332,12 @@ impl Strategy for GradientGuidedTuning {
                         .map(|(_, v)| v.clone())
                         .or_else(|| values.last().cloned())
                 }
-                GradientDirection::DecreaseHelps => {
-                    values
-                        .iter()
-                        .filter_map(|v| v.as_f64().map(|f| (f, v)))
-                        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-                        .map(|(_, v)| v.clone())
-                        .or_else(|| values.first().cloned())
-                }
+                GradientDirection::DecreaseHelps => values
+                    .iter()
+                    .filter_map(|v| v.as_f64().map(|f| (f, v)))
+                    .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(_, v)| v.clone())
+                    .or_else(|| values.first().cloned()),
                 GradientDirection::Inconclusive => values.choose(&mut rng).cloned(),
             };
 
@@ -221,9 +347,7 @@ impl Strategy for GradientGuidedTuning {
 
                 // Dedup check
                 if self.config_already_tried(&config_params, ctx.history)
-                    && let Some(alt) = values
-                        .iter()
-                        .find(|v| *v != &val)
+                    && let Some(alt) = values.iter().find(|v| *v != &val)
                 {
                     config_params.insert(top.param.clone(), alt.clone());
                 }
@@ -362,7 +486,10 @@ mod tests {
         let strategy = GradientGuidedTuning::new(5, 0.02);
 
         let mut sweep = HashMap::new();
-        sweep.insert("ball_conf".into(), vec![serde_json::json!(0.25), serde_json::json!(0.30)]);
+        sweep.insert(
+            "ball_conf".into(),
+            vec![serde_json::json!(0.25), serde_json::json!(0.30)],
+        );
 
         let mut prod = HashMap::new();
         prod.insert("ball_conf".into(), serde_json::json!(0.28));
@@ -394,8 +521,18 @@ mod tests {
         ];
 
         let mut sweep = HashMap::new();
-        sweep.insert("ball_conf".into(), vec![serde_json::json!(0.20), serde_json::json!(0.25), serde_json::json!(0.30)]);
-        sweep.insert("dedup_window".into(), vec![serde_json::json!(4.0), serde_json::json!(6.0)]);
+        sweep.insert(
+            "ball_conf".into(),
+            vec![
+                serde_json::json!(0.20),
+                serde_json::json!(0.25),
+                serde_json::json!(0.30),
+            ],
+        );
+        sweep.insert(
+            "dedup_window".into(),
+            vec![serde_json::json!(4.0), serde_json::json!(6.0)],
+        );
 
         let mut prod = HashMap::new();
         prod.insert("ball_conf".into(), serde_json::json!(0.28));
@@ -413,5 +550,146 @@ mod tests {
         let suggestion = strategy.suggest(&ctx).unwrap();
         assert!(!suggestion.config.parameters.is_empty());
         assert!(!suggestion.rationale.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // RandomSearch tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_random_search_valid_config() {
+        let file = NamedTempFile::new().unwrap();
+        let store = LearningStore::new(file.path()).unwrap();
+
+        let mut sweep = HashMap::new();
+        sweep.insert(
+            "lr".into(),
+            vec![serde_json::json!(0.01), serde_json::json!(0.1)],
+        );
+        sweep.insert(
+            "bs".into(),
+            vec![serde_json::json!(16), serde_json::json!(32)],
+        );
+
+        let ctx = StrategyContext {
+            history: &[],
+            production_config: &HashMap::new(),
+            sweep_space: &sweep,
+            targets: &HashMap::new(),
+            primary_metric: "f1",
+            learning_store: &store,
+        };
+
+        let suggestion = RandomSearch.suggest(&ctx).unwrap();
+        assert!(suggestion.config.parameters.contains_key("lr"));
+        assert!(suggestion.config.parameters.contains_key("bs"));
+        assert!(suggestion.rationale.contains("Random"));
+    }
+
+    #[test]
+    fn test_random_search_values_from_sweep() {
+        let file = NamedTempFile::new().unwrap();
+        let store = LearningStore::new(file.path()).unwrap();
+
+        let sweep_vals = vec![serde_json::json!(0.01), serde_json::json!(0.1)];
+        let mut sweep = HashMap::new();
+        sweep.insert("lr".into(), sweep_vals.clone());
+
+        let ctx = StrategyContext {
+            history: &[],
+            production_config: &HashMap::new(),
+            sweep_space: &sweep,
+            targets: &HashMap::new(),
+            primary_metric: "f1",
+            learning_store: &store,
+        };
+
+        let suggestion = RandomSearch.suggest(&ctx).unwrap();
+        let val = &suggestion.config.parameters["lr"];
+        assert!(sweep_vals.contains(val));
+    }
+
+    // -----------------------------------------------------------------------
+    // GridSearch tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_grid_search_skips_tried() {
+        let file = NamedTempFile::new().unwrap();
+        let store = LearningStore::new(file.path()).unwrap();
+
+        let mut sweep = HashMap::new();
+        sweep.insert(
+            "ball_conf".into(),
+            vec![serde_json::json!(0.25), serde_json::json!(0.30)],
+        );
+
+        // First combo is already tried
+        let tried = make_result("1", 0.75, 0.25);
+
+        let ctx = StrategyContext {
+            history: &[tried],
+            production_config: &HashMap::new(),
+            sweep_space: &sweep,
+            targets: &HashMap::new(),
+            primary_metric: "f1",
+            learning_store: &store,
+        };
+
+        let suggestion = GridSearch.suggest(&ctx).unwrap();
+        assert_eq!(
+            suggestion.config.parameters["ball_conf"],
+            serde_json::json!(0.30)
+        );
+        assert!(suggestion.rationale.contains("Grid search"));
+    }
+
+    #[test]
+    fn test_grid_search_exhausted() {
+        let file = NamedTempFile::new().unwrap();
+        let store = LearningStore::new(file.path()).unwrap();
+
+        let mut sweep = HashMap::new();
+        sweep.insert(
+            "ball_conf".into(),
+            vec![serde_json::json!(0.25), serde_json::json!(0.30)],
+        );
+
+        let history = vec![make_result("1", 0.75, 0.25), make_result("2", 0.78, 0.30)];
+
+        let ctx = StrategyContext {
+            history: &history,
+            production_config: &HashMap::new(),
+            sweep_space: &sweep,
+            targets: &HashMap::new(),
+            primary_metric: "f1",
+            learning_store: &store,
+        };
+
+        let err = GridSearch.suggest(&ctx);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("exhausted"));
+    }
+
+    // -----------------------------------------------------------------------
+    // build_strategy tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_build_strategy_known() {
+        let s1 = build_strategy("gradient_guided", 5, 0.02).unwrap();
+        assert_eq!(s1.name(), "gradient_guided_tuning");
+
+        let s2 = build_strategy("random", 5, 0.02).unwrap();
+        assert_eq!(s2.name(), "random");
+
+        let s3 = build_strategy("grid", 5, 0.02).unwrap();
+        assert_eq!(s3.name(), "grid");
+    }
+
+    #[test]
+    fn test_build_strategy_unknown() {
+        let err = build_strategy("bayesian", 5, 0.02);
+        assert!(err.is_err());
     }
 }

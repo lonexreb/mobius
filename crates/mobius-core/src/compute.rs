@@ -1,7 +1,9 @@
+use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Raw output from a compute backend execution.
@@ -34,7 +36,93 @@ pub trait ComputeBackend: Send + Sync {
     ) -> anyhow::Result<RawOutput>;
 }
 
+/// Async trait for compute backends that perform I/O (HTTP, SSH, cloud APIs).
+///
+/// For local subprocess execution, wrap `SubprocessBackend` in a [`SyncAdapter`].
+#[async_trait]
+pub trait AsyncComputeBackend: Send + Sync {
+    async fn submit(
+        &self,
+        command: &str,
+        env: &HashMap<String, String>,
+        timeout_secs: u64,
+    ) -> anyhow::Result<RawOutput>;
+}
+
+/// Wraps a synchronous [`ComputeBackend`] for use in async contexts.
+///
+/// Delegates to `tokio::task::spawn_blocking` for non-blocking execution.
+pub struct SyncAdapter<T: ComputeBackend + Clone + 'static> {
+    inner: T,
+}
+
+impl<T: ComputeBackend + Clone + 'static> SyncAdapter<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl<T: ComputeBackend + Clone + 'static> AsyncComputeBackend for SyncAdapter<T> {
+    async fn submit(
+        &self,
+        command: &str,
+        env: &HashMap<String, String>,
+        timeout_secs: u64,
+    ) -> anyhow::Result<RawOutput> {
+        let backend = self.inner.clone();
+        let cmd = command.to_string();
+        let env = env.clone();
+        tokio::task::spawn_blocking(move || backend.submit(&cmd, &env, timeout_secs)).await?
+    }
+}
+
+/// Runs multiple experiments concurrently using an inner async backend.
+pub struct ParallelBackend {
+    inner: Arc<dyn AsyncComputeBackend>,
+    max_concurrency: usize,
+}
+
+impl ParallelBackend {
+    pub fn new(inner: Arc<dyn AsyncComputeBackend>, max_concurrency: usize) -> Self {
+        Self {
+            inner,
+            max_concurrency,
+        }
+    }
+
+    /// Submit multiple commands concurrently, respecting `max_concurrency`.
+    pub async fn submit_batch(
+        &self,
+        jobs: Vec<(String, HashMap<String, String>, u64)>,
+    ) -> Vec<anyhow::Result<RawOutput>> {
+        let sem = Arc::new(tokio::sync::Semaphore::new(self.max_concurrency));
+        let mut handles = Vec::new();
+
+        for (cmd, env, timeout) in jobs {
+            let permit = sem.clone().acquire_owned().await.unwrap();
+            let backend = self.inner.clone();
+            handles.push(tokio::spawn(async move {
+                let result = backend.submit(&cmd, &env, timeout).await;
+                drop(permit);
+                result
+            }));
+        }
+
+        let mut results = Vec::new();
+        for handle in handles {
+            results.push(
+                handle
+                    .await
+                    .unwrap_or_else(|e| Err(anyhow::anyhow!("Task panicked: {e}"))),
+            );
+        }
+        results
+    }
+}
+
 /// Executes experiments as local subprocesses.
+#[derive(Clone)]
 pub struct SubprocessBackend;
 
 impl ComputeBackend for SubprocessBackend {
@@ -59,9 +147,9 @@ impl ComputeBackend for SubprocessBackend {
             cmd.env(k, v);
         }
 
-        let output = cmd.output().map_err(|e| {
-            anyhow::anyhow!("Failed to execute command '{}': {}", parts[0], e)
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to execute command '{}': {}", parts[0], e))?;
 
         let duration = start.elapsed().as_secs_f64();
 
@@ -166,9 +254,12 @@ impl OutputParser {
                     } else {
                         0.0
                     };
-                    pm.metrics.insert("precision".into(), (p * 10000.0).round() / 10000.0);
-                    pm.metrics.insert("recall".into(), (r * 10000.0).round() / 10000.0);
-                    pm.metrics.insert("f1".into(), (f1 * 10000.0).round() / 10000.0);
+                    pm.metrics
+                        .insert("precision".into(), (p * 10000.0).round() / 10000.0);
+                    pm.metrics
+                        .insert("recall".into(), (r * 10000.0).round() / 10000.0);
+                    pm.metrics
+                        .insert("f1".into(), (f1 * 10000.0).round() / 10000.0);
                 }
             }
 
@@ -267,10 +358,39 @@ PALOA BENCH EVALUATION
     #[test]
     fn test_subprocess_echo() {
         let backend = SubprocessBackend;
-        let result = backend
-            .submit("echo hello", &HashMap::new(), 10)
-            .unwrap();
+        let result = backend.submit("echo hello", &HashMap::new(), 10).unwrap();
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_sync_adapter_echo() {
+        let adapter = SyncAdapter::new(SubprocessBackend);
+        let result = adapter
+            .submit("echo async_hello", &HashMap::new(), 10)
+            .await
+            .unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout.contains("async_hello"));
+    }
+
+    #[tokio::test]
+    async fn test_parallel_batch() {
+        let adapter = Arc::new(SyncAdapter::new(SubprocessBackend));
+        let parallel = ParallelBackend::new(adapter, 2);
+
+        let jobs = vec![
+            ("echo job1".into(), HashMap::new(), 10),
+            ("echo job2".into(), HashMap::new(), 10),
+            ("echo job3".into(), HashMap::new(), 10),
+        ];
+
+        let results = parallel.submit_batch(jobs).await;
+        assert_eq!(results.len(), 3);
+        for (i, r) in results.iter().enumerate() {
+            let output = r.as_ref().unwrap();
+            assert_eq!(output.exit_code, 0);
+            assert!(output.stdout.contains(&format!("job{}", i + 1)));
+        }
     }
 }

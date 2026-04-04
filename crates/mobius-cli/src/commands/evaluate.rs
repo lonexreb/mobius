@@ -1,21 +1,24 @@
 use mobius_bench::evaluator::Evaluator;
 use mobius_bench::matcher::GreedyTimestampMatcher;
-use mobius_bench::scorers::{ClassificationAccuracyScorer, DimensionScorer, F1Scorer, TimestampMaeScorer};
+use mobius_bench::scorers::{
+    ClassificationAccuracyScorer, DimensionScorer, F1Scorer, TimestampMaeScorer,
+};
 use mobius_core::config::{DimensionConfig, MobiusConfig};
 use mobius_core::loader;
 use std::path::Path;
 
 pub fn run(predictions_path: &str, gt_path: &str) -> anyhow::Result<()> {
     let config = MobiusConfig::load("mobius.toml").ok();
-    let match_window = config
-        .as_ref()
-        .map(|c| c.bench.match_window)
-        .unwrap_or(6.0);
+    let match_window = config.as_ref().map(|c| c.bench.match_window).unwrap_or(6.0);
 
     let predictions = loader::load_predictions(Path::new(predictions_path))?;
     let ground_truth = loader::load_ground_truth(Path::new(gt_path))?;
 
-    println!("Loaded {} predictions, {} ground truth entries", predictions.len(), ground_truth.len());
+    println!(
+        "Loaded {} predictions, {} ground truth entries",
+        predictions.len(),
+        ground_truth.len()
+    );
 
     let mut evaluator = Evaluator::new(Box::new(GreedyTimestampMatcher), match_window);
 
@@ -35,7 +38,10 @@ pub fn run(predictions_path: &str, gt_path: &str) -> anyhow::Result<()> {
 
     // Print results
     println!("\n{:=<60}", "");
-    println!("  BENCH SCORE: {:.1} / 100  ({:?})", result.bench_score, result.grade);
+    println!(
+        "  BENCH SCORE: {:.1} / 100  ({:?})",
+        result.bench_score, result.grade
+    );
     println!("{:=<60}", "");
 
     for dim in &result.dimensions {

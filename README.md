@@ -24,9 +24,9 @@
 *Gradient-guided loops. Multi-dimensional evaluation. MCP-native tooling. Budget-aware agents.*
 
 [![Rust](https://img.shields.io/badge/Rust-2024_Edition-orange?logo=rust)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-32_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-80_passing-brightgreen)]()
 [![License](https://img.shields.io/badge/License-MIT%20%7C%20Apache--2.0-blue)]()
-[![Phase](https://img.shields.io/badge/Phase-2%20Complete-purple)]()
+[![Phase](https://img.shields.io/badge/Phase-3%20Complete-purple)]()
 
 </div>
 
@@ -74,7 +74,7 @@ Mobius is the unified framework that combines:
                                         │
                     ┌───────────────────▼──────────────────┐
                     │           mobius-mcp                   │
-                    │  MCP Server (Phase 3)                  │
+                    │  MCP Server (10 tools, 3 resources)    │
                     │  Any agent can drive experiments       │
                     └───────────────────────────────────────┘
 ```
@@ -99,8 +99,8 @@ cargo run -- sweep --spec '{"lr": [0.01, 0.1], "batch": [16, 64]}'
 # Evaluate
 cargo run -- evaluate --predictions preds.json --ground-truth gt.json
 
-# Autonomous loop
-cargo run -- agent --budget 20.0
+# Autonomous loop (with strategy selection)
+cargo run -- agent --budget 20.0 --strategy gradient_guided
 
 # Monitor
 cargo run -- status        # Best config + KPI gap
@@ -186,7 +186,7 @@ weight = 0.20
 scorer = "timestamp_mae"
 
 [agent]
-strategies = ["parameter_tuning"]
+strategies = ["gradient_guided"]  # or "random", "grid"
 plateau_window = 5
 plateau_threshold = 0.02
 ```
@@ -222,10 +222,10 @@ Everything is a trait. Swap any component:
 | Trait | Default Implementation | You Can Add |
 |-------|----------------------|-------------|
 | `ExperimentStore` | `JsonlStore` (JSONL files) | SQLite, Postgres, S3 |
-| `ComputeBackend` | `SubprocessBackend` (local) | Modal, RunPod, K8s |
+| `ComputeBackend` | `SubprocessBackend` (local) | Async via `SyncAdapter`, parallel via `ParallelBackend` |
 | `Matcher` | `GreedyTimestampMatcher` | Hungarian, multi-field |
 | `DimensionScorer` | F1, Accuracy, MAE | Custom metrics |
-| `Strategy` | `GradientGuidedTuning` | Tree search, Bayesian |
+| `Strategy` | `GradientGuidedTuning`, `RandomSearch`, `GridSearch` | Bayesian, tree search |
 | `Hook` | Budget, Regression, Overfitting | Slack alerts, logging |
 
 ---
@@ -250,7 +250,7 @@ mobius/
 │   ├── mobius-bench/                   # Evaluation engine
 │   ├── mobius-claw/                    # Autonomous agent
 │   ├── mobius-cli/                     # CLI binary
-│   └── mobius-mcp/                     # MCP server (Phase 3)
+│   └── mobius-mcp/                     # MCP server (10 tools, 3 resources)
 ├── python/                             # Python SDK (Phase 4)
 ├── go/                                 # Go SDK (Phase 4)
 └── examples/
@@ -262,7 +262,7 @@ mobius/
 ## Testing
 
 ```bash
-cargo test --workspace                                    # 32 tests
+cargo test --workspace                                    # 82 tests
 cargo clippy --workspace --all-targets -- -D warnings     # Zero warnings
 cargo fmt --all --check                                   # Formatting
 ```
@@ -275,10 +275,14 @@ cargo fmt --all --check                                   # Formatting
 |-------|--------|------|
 | **1: Core** | COMPLETE | Types, storage, config, compute, parsing, aggregation |
 | **2: Agent** | COMPLETE | Evaluator, strategy, hooks, agent loop, 8 CLI commands |
-| **3: MCP** | PLANNED | MCP server, tree-search, swarm, remote backends |
-| **4: Production** | PLANNED | Async, Python/Go SDKs, plugins, distributed coordination |
+| **3: MCP** | COMPLETE | MCP server with 10 tools, 3 resources, rmcp over stdio |
+| **4: Production** | IN PROGRESS | Async backends, parallel sweeps, publishing |
 
-See [FEATURES.md](FEATURES.md) for the detailed checklist.
+## Documentation
+
+- **[Usage Guide](docs/GUIDE.md)** -- Installation, configuration, running experiments, strategy selection
+- **[MCP Setup](docs/MCP_SETUP.md)** -- Configuring Mobius as an MCP server for Claude Code and other clients
+- **[Example Config](examples/mobius.toml.example)** -- Fully annotated `mobius.toml` template
 
 ---
 

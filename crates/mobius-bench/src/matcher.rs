@@ -30,8 +30,7 @@ impl Matcher for GreedyTimestampMatcher {
         let mut missed = Vec::new();
 
         // Sort GT by timestamp for deterministic matching
-        let mut gt_sorted: Vec<(usize, &GroundTruth)> =
-            ground_truth.iter().enumerate().collect();
+        let mut gt_sorted: Vec<(usize, &GroundTruth)> = ground_truth.iter().enumerate().collect();
         gt_sorted.sort_by(|a, b| {
             let ta = a.1.timestamp.unwrap_or(0.0);
             let tb = b.1.timestamp.unwrap_or(0.0);

@@ -15,12 +15,17 @@ struct Cli {
 enum Commands {
     /// Initialize a new Mobius project (generates mobius.toml)
     Init,
-    /// Evaluate results against ground truth
+    /// Evaluate predictions against ground truth
+    #[command(
+        long_about = "Evaluate predictions against ground truth using multi-dimensional scoring.\n\n\
+        Dimensions (Detection F1, Classification Accuracy, Timestamp MAE) are configured\n\
+        in mobius.toml or use defaults. Results include bench score, grade, and per-dimension breakdown."
+    )]
     Evaluate {
-        /// Path to predictions file
+        /// Path to predictions JSON file
         #[arg(long)]
         predictions: String,
-        /// Path to ground truth file
+        /// Path to ground truth JSON file
         #[arg(long)]
         ground_truth: String,
     },
@@ -47,10 +52,18 @@ enum Commands {
         spec: String,
     },
     /// Start autonomous agent loop
+    #[command(long_about = "Start the autonomous experiment agent loop.\n\n\
+        Iterates through ORIENT-PROPOSE-EXECUTE-EVALUATE-LEARN-DECIDE cycles\n\
+        until targets are met, budget is exhausted, max iterations reached,\n\
+        or a plateau is detected.\n\n\
+        Requires mobius.toml in the current directory.")]
     Agent {
         /// Budget limit in USD
         #[arg(long, default_value = "20.0")]
         budget: f64,
+        /// Strategy to use (gradient_guided, random, grid)
+        #[arg(long, default_value = "gradient_guided")]
+        strategy: String,
     },
 }
 
@@ -73,7 +86,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Run { config } => commands::run::run(&config)?,
         Commands::Suggest => commands::suggest::run()?,
         Commands::Sweep { spec } => commands::sweep::run(&spec)?,
-        Commands::Agent { budget } => commands::agent::run(budget)?,
+        Commands::Agent { budget, strategy } => commands::agent::run(budget, &strategy)?,
     }
 
     Ok(())

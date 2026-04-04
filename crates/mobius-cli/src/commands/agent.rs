@@ -1,17 +1,21 @@
+use mobius_claw::StopReason;
 use mobius_claw::agent::{AgentConfig, AgentLoop};
 use mobius_claw::hooks::{BudgetCheckHook, OverfittingDetectionHook, RegressionDetectionHook};
 use mobius_claw::learning_store::LearningStore;
-use mobius_claw::strategy::GradientGuidedTuning;
-use mobius_claw::StopReason;
+use mobius_claw::strategy::build_strategy;
 use mobius_core::budget::BudgetGuard;
 use mobius_core::compute::SubprocessBackend;
 use mobius_core::config::MobiusConfig;
 use mobius_core::store::JsonlStore;
 use std::collections::HashMap;
 
-pub fn run(budget_limit: f64) -> anyhow::Result<()> {
-    let config = MobiusConfig::load("mobius.toml")
-        .map_err(|e| anyhow::anyhow!("Failed to load mobius.toml: {}. Run 'mobius init' first.", e))?;
+pub fn run(budget_limit: f64, strategy_name: &str) -> anyhow::Result<()> {
+    let config = MobiusConfig::load("mobius.toml").map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to load mobius.toml: {}. Run 'mobius init' first.",
+            e
+        )
+    })?;
 
     let store_path = dirs::home_dir()
         .unwrap_or_default()
@@ -26,8 +30,7 @@ pub fn run(budget_limit: f64) -> anyhow::Result<()> {
         .join(".mobius")
         .join("budget.json");
 
-    let budget = BudgetGuard::new(budget_limit)
-        .with_state_file(&budget_path)?;
+    let budget = BudgetGuard::new(budget_limit).with_state_file(&budget_path)?;
 
     // Build production config
     let mut production_config: HashMap<String, serde_json::Value> = HashMap::new();
@@ -49,14 +52,15 @@ pub fn run(budget_limit: f64) -> anyhow::Result<()> {
         timeout_secs: 600,
     };
 
-    let strategy = GradientGuidedTuning::new(
+    let strategy = build_strategy(
+        strategy_name,
         config.agent.plateau_window,
         config.agent.plateau_threshold,
-    );
+    )?;
 
     let mut agent = AgentLoop::new(
         agent_config,
-        Box::new(strategy),
+        strategy,
         Box::new(SubprocessBackend),
         Box::new(JsonlStore::new(&store_path)?),
         LearningStore::new(&learning_path)?,
@@ -67,7 +71,10 @@ pub fn run(budget_limit: f64) -> anyhow::Result<()> {
     agent.add_post_hook(Box::new(RegressionDetectionHook::new(0.05)));
     agent.add_post_hook(Box::new(OverfittingDetectionHook::default()));
 
-    println!("Starting autonomous agent loop (budget: ${:.2})...\n", budget_limit);
+    println!(
+        "Starting autonomous agent loop (budget: ${:.2})...\n",
+        budget_limit
+    );
 
     let report = agent.run()?;
 
@@ -75,13 +82,16 @@ pub fn run(budget_limit: f64) -> anyhow::Result<()> {
     println!("  AGENT REPORT");
     println!("{:=<60}", "");
     println!("  Iterations: {}", report.iterations);
-    println!("  Stop reason: {}", match report.stop_reason {
-        StopReason::TargetsMet => "Targets met!",
-        StopReason::BudgetExhausted => "Budget exhausted",
-        StopReason::MaxIterationsReached => "Max iterations reached",
-        StopReason::Plateau => "Plateau detected",
-        StopReason::UserInterrupted => "User interrupted",
-    });
+    println!(
+        "  Stop reason: {}",
+        match report.stop_reason {
+            StopReason::TargetsMet => "Targets met!",
+            StopReason::BudgetExhausted => "Budget exhausted",
+            StopReason::MaxIterationsReached => "Max iterations reached",
+            StopReason::Plateau => "Plateau detected",
+            StopReason::UserInterrupted => "User interrupted",
+        }
+    );
 
     if let Some(best) = &report.best_result {
         println!("  Best result: {}", best.id);

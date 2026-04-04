@@ -1,12 +1,18 @@
-use mobius_core::compute::{OutputParser, SubprocessBackend, ComputeBackend};
+use mobius_core::compute::{ComputeBackend, OutputParser, SubprocessBackend};
 use mobius_core::config::MobiusConfig;
-use mobius_core::experiment::{ExperimentConfig, ExperimentResult, ExperimentStatus, ExperimentStore};
+use mobius_core::experiment::{
+    ExperimentConfig, ExperimentResult, ExperimentStatus, ExperimentStore,
+};
 use mobius_core::store::JsonlStore;
 use std::collections::HashMap;
 
 pub fn run(config_json: &str) -> anyhow::Result<()> {
-    let mobius_config = MobiusConfig::load("mobius.toml")
-        .map_err(|e| anyhow::anyhow!("Failed to load mobius.toml: {}. Run 'mobius init' first.", e))?;
+    let mobius_config = MobiusConfig::load("mobius.toml").map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to load mobius.toml: {}. Run 'mobius init' first.",
+            e
+        )
+    })?;
 
     let overrides: HashMap<String, serde_json::Value> = serde_json::from_str(config_json)?;
 

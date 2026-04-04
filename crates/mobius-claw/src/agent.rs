@@ -325,7 +325,9 @@ mod tests {
             _env: &HashMap<String, String>,
             _timeout: u64,
         ) -> anyhow::Result<RawOutput> {
-            let idx = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let idx = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let stdout = self
                 .results
                 .get(idx)
@@ -351,7 +353,10 @@ mod tests {
         let learning_path = dir.path().join("learnings.jsonl");
 
         let mut sweep = HashMap::new();
-        sweep.insert("x".into(), vec![serde_json::json!(1.0), serde_json::json!(2.0)]);
+        sweep.insert(
+            "x".into(),
+            vec![serde_json::json!(1.0), serde_json::json!(2.0)],
+        );
 
         let mut prod = HashMap::new();
         prod.insert("x".into(), serde_json::json!(1.5));
@@ -385,7 +390,10 @@ mod tests {
         let mut agent = make_agent(&dir, mock, 3, 100.0, HashMap::new());
         let report = agent.run().unwrap();
         assert_eq!(report.iterations, 3);
-        assert!(matches!(report.stop_reason, StopReason::MaxIterationsReached));
+        assert!(matches!(
+            report.stop_reason,
+            StopReason::MaxIterationsReached
+        ));
     }
 
     #[test]

@@ -3,10 +3,10 @@
 //! All tool handlers share access to experiment storage, learning signals,
 //! budget tracking, and project configuration through `Arc<RwLock<SharedState>>`.
 
+use mobius_claw::learning_store::LearningStore;
 use mobius_core::budget::BudgetGuard;
 use mobius_core::config::MobiusConfig;
 use mobius_core::store::JsonlStore;
-use mobius_claw::learning_store::LearningStore;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,9 +48,15 @@ impl SharedState {
     /// Creates `~/.mobius/` if it does not exist. Loads `mobius.toml` from the
     /// current directory if present (returns `config: None` otherwise).
     pub fn new() -> anyhow::Result<State> {
-        let mobius_dir = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".mobius");
+        let mobius_dir = dirs::home_dir().unwrap_or_default().join(".mobius");
+        Self::with_dir(mobius_dir, MobiusConfig::load("mobius.toml").ok())
+    }
+
+    /// Initialize shared state rooted in a custom directory.
+    ///
+    /// Creates `mobius_dir` if it does not exist. Useful for tests,
+    /// embeddings, and deployments where `~/.mobius/` is not appropriate.
+    pub fn with_dir(mobius_dir: PathBuf, config: Option<MobiusConfig>) -> anyhow::Result<State> {
         std::fs::create_dir_all(&mobius_dir)?;
 
         let store = JsonlStore::new(mobius_dir.join("history.jsonl"))?;
@@ -62,8 +68,6 @@ impl SharedState {
         } else {
             BudgetGuard::new(20.0)
         };
-
-        let config = MobiusConfig::load("mobius.toml").ok();
 
         Ok(Arc::new(RwLock::new(SharedState {
             config,
