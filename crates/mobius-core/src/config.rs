@@ -90,6 +90,9 @@ pub struct ComputeSection {
     #[serde(default = "default_backend")]
     pub backend: String,
     pub gpu_type: Option<String>,
+    /// SSH backend configuration (used when `backend = "ssh"`).
+    #[serde(default)]
+    pub ssh: Option<crate::ssh_backend::SshConfig>,
 }
 
 fn default_backend() -> String {

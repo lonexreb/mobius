@@ -1,4 +1,5 @@
-use mobius_core::compute::{ComputeBackend, OutputParser, SubprocessBackend, config_to_env};
+use crate::commands::backend::build_backend;
+use mobius_core::compute::{OutputParser, config_to_env};
 use mobius_core::config::MobiusConfig;
 use mobius_core::experiment::{
     ExperimentConfig, ExperimentResult, ExperimentStatus, ExperimentStore,
@@ -31,7 +32,7 @@ pub fn run(config_json: &str) -> anyhow::Result<()> {
     println!("Running experiment...");
     println!("Config overrides: {}", config_json);
 
-    let backend = SubprocessBackend;
+    let backend = build_backend(&mobius_config)?;
     let env = config_to_env(&params, &mobius_config.experiment.env_map);
     let command = mobius_config
         .experiment

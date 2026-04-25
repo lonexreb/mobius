@@ -7,4 +7,5 @@ pub mod experiment;
 pub mod loader;
 pub mod pareto;
 pub mod schema;
+pub mod ssh_backend;
 pub mod store;
