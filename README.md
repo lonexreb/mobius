@@ -14,10 +14,10 @@
 *One loop. One twist. Every pass learns.*
 
 [![Rust](https://img.shields.io/badge/Rust-2024_Edition-orange?logo=rust)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-161_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-175_passing-brightgreen)]()
 [![Strategies](https://img.shields.io/badge/Strategies-10-blue)]()
 [![License](https://img.shields.io/badge/License-MIT%20%7C%20Apache--2.0-blue)]()
-[![Phase](https://img.shields.io/badge/Phase-8%20Complete-purple)]()
+[![Phase](https://img.shields.io/badge/Phase-9.1%20Shipped-purple)]()
 
 </div>
 
@@ -196,6 +196,23 @@ latency_ms = 100.0
 memory_gb = 8.0
 ```
 
+### Remote execution over SSH (Phase 9.1)
+
+```toml
+[compute]
+backend = "ssh"
+
+[compute.ssh]
+host = "gpu-node-01"                              # Host alias from ~/.ssh/config (or user@hostname)
+remote_workdir = "/data/experiments"              # cd'd into before each run
+identity_file = "~/.ssh/id_ed25519"               # optional
+port = 22                                          # optional
+options = ["StrictHostKeyChecking=accept-new",    # passed verbatim as ssh -o ...
+           "ConnectTimeout=5"]
+```
+
+Every `mobius run / sweep / agent` then dispatches the configured `command` over `ssh` with the parameter env vars exported on the remote side. Uses your existing `~/.ssh/config`, ssh-agent, and key material — no extra crates added.
+
 ---
 
 ## Architecture
@@ -252,7 +269,7 @@ Everything is a trait. Swap any component:
 | Trait | Implementations | You Can Add |
 |-------|----------------|-------------|
 | `ExperimentStore` | `JsonlStore`, `SqliteStore` | Postgres, S3, DynamoDB |
-| `ComputeBackend` | `SubprocessBackend`, `SyncAdapter`, `ParallelBackend` | Modal, RunPod, SSH |
+| `ComputeBackend` | `SubprocessBackend`, `SshBackend`, `SyncAdapter`, `ParallelBackend` | Modal, RunPod, Kubernetes |
 | `Strategy` | 10 built-in (GGT, TPE, CMA-ES, NSGA-II, UCB1, PBT, Auto, Hyperband, Grid, Random) | Bayesian GP, BOHB |
 | `DimensionScorer` | F1, Accuracy, Timestamp MAE | Custom metrics |
 | `Hook` | Budget, Regression, Overfitting, Constraints | Slack alerts, logging |
@@ -273,7 +290,7 @@ Everything is a trait. Swap any component:
 ## Testing
 
 ```bash
-cargo test --workspace          # 161 tests (24 core + 4 bench + 74 claw + 25 cli + 34 mcp)
+cargo test --workspace          # 175 tests (33 core + 4 bench + 74 claw + 30 cli + 30 mcp + 4 e2e)
 cargo clippy --workspace --all-targets -- -D warnings   # Zero warnings
 cargo fmt --all --check         # Consistent formatting
 ```
@@ -290,7 +307,8 @@ cargo fmt --all --check         # Consistent formatting
 | **6: Tree Search + SQLite** | COMPLETE | UCB1, SqliteStore, `--store` flag |
 | **7: Best-in-Class** | COMPLETE | CMA-ES, AutoStrategy, PBT, importance, colors, ask/tell, compare |
 | **8: ML Power Features** | COMPLETE | Hyperband, log-scale, MedianPruner, constraints, enqueue, export, config params |
-| **9: SDK + Remote** | PLANNED | Python/Go SDKs, cloud backends, WASM plugins, distributed agents |
+| **9.1: SSH Backend** | COMPLETE | Remote execution over `ssh`, leverages `~/.ssh/config`, no extra deps |
+| **9.2-9.7: SDK + Cloud** | PLANNED | Python/Go SDKs, Modal/RunPod backends, WASM plugins, distributed agents |
 
 ---
 

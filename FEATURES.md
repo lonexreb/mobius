@@ -115,11 +115,23 @@ The unified framework for autonomous ML experimentation. Combines autoresearch l
 - [x] `mobius export` — CSV/JSON export of experiment history
 - [x] 159+ tests across workspace
 
-## Phase 9: SDK + Remote Execution [PLANNED]
+## Phase 9: SDK + Remote Execution [IN PROGRESS]
 
-- [ ] Python SDK (`pymobius`) — PyO3 bindings for core + bench
-- [ ] Go SDK (`go-mobius`) — CGo bindings
-- [ ] Remote Compute Backends — Modal, RunPod, SSH
-- [ ] Plugin System — dynamic scorer/strategy loading via shared libraries
-- [ ] Distributed Coordination — multi-node agent swarms
-- [ ] Security & Isolation — sandboxed execution, credential gateway
+### 9.1 SSH Remote Backend [COMPLETE]
+- [x] `SshBackend` — shells out to system `ssh`, leverages `~/.ssh/config` and ssh-agent
+- [x] `SshConfig` — `host`, `remote_workdir`, `identity_file`, `port`, custom `-o options`
+- [x] `BatchMode=yes` enforced so misconfigured hosts fail fast (no interactive prompts)
+- [x] Single-quote shell escaping for env values; sorted keys for deterministic command rendering
+- [x] Tilde expansion for `~/path` identity files
+- [x] Same poll/kill timeout semantics as `SubprocessBackend`
+- [x] `[compute] backend = "ssh"` + `[compute.ssh]` config block
+- [x] `build_backend()` factory — defaults to local; ssh requires the config block
+- [x] 175 tests across workspace (+14 new)
+
+### Remaining Phase 9 work [PLANNED]
+- [ ] 9.2 Python SDK (`pymobius`) — PyO3 bindings for core + bench
+- [ ] 9.3 Go SDK (`go-mobius`) — CGo bindings
+- [ ] 9.4 Modal / RunPod backends — cloud compute drivers
+- [ ] 9.5 Plugin system — dynamic scorer/strategy loading via shared libs
+- [ ] 9.6 Distributed coordination — multi-node agent swarms
+- [ ] 9.7 Security & isolation — sandboxed execution, credential gateway

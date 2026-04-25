@@ -77,10 +77,20 @@ scorer = "timestamp_mae"
 # -----------------------------------------------------------------------------
 [compute]
 # Backend type (string, default: "local")
-# Currently only "local" (subprocess) is supported.
+# Supported: "local" (subprocess) | "ssh" (remote over system ssh binary)
 backend = "local"
 # Optional GPU type hint (e.g., "A100", "T4")
 # gpu_type = "A100"
+
+# SSH remote backend (used when backend = "ssh"). Phase 9.1.
+# Leverages your existing ~/.ssh/config, ssh-agent, and key material —
+# no new crates pulled in by Mobius.
+# [compute.ssh]
+# host = "gpu-node-01"                              # Host alias from ssh_config or user@hostname
+# remote_workdir = "/data/experiments"              # cd'd into before each run
+# identity_file = "~/.ssh/id_ed25519"               # optional
+# port = 22                                          # optional
+# options = ["StrictHostKeyChecking=accept-new", "ConnectTimeout=5"]
 
 # -----------------------------------------------------------------------------
 # Agent loop settings

@@ -16,7 +16,7 @@ High-performance Rust framework for autonomous ML experimentation. One library: 
 mobius/
   Cargo.toml              # Workspace root (edition 2024, resolver 2, LTO release profile)
   crates/
-    mobius-core/           # Types, config, storage (JSONL + SQLite), compute, schema, aggregation, pareto
+    mobius-core/           # Types, config, storage (JSONL + SQLite), compute (local + ssh), schema, aggregation, pareto
     mobius-bench/          # Evaluation: matchers, dimension scorers, multi-dim evaluator
     mobius-claw/           # Autonomous agent: 10 strategies, 4 hooks, 2 pruners, learning, importance
     mobius-cli/            # CLI binary: 17 commands, colored output, progress bars, TUI dashboard
@@ -37,7 +37,7 @@ mobius-core  (no internal deps)
 
 | Crate | Key Types |
 |-------|-----------|
-| `mobius-core` | `ExperimentResult`, `ExperimentConfig`, `ExperimentStatus` (Success/Error/Timeout/Pending), `MobiusConfig`, `StrategyParams`, `BudgetGuard`, `GroundTruth`, `Prediction`, `BenchResult`, `ComputeBackend`/`AsyncComputeBackend` traits, `SyncAdapter`, `ParallelBackend`, `ExperimentStore` trait, `JsonlStore`, `SqliteStore` (WAL mode, prepared statement caching) |
+| `mobius-core` | `ExperimentResult`, `ExperimentConfig`, `ExperimentStatus` (Success/Error/Timeout/Pending), `MobiusConfig`, `StrategyParams`, `BudgetGuard`, `GroundTruth`, `Prediction`, `BenchResult`, `ComputeBackend`/`AsyncComputeBackend` traits, `SubprocessBackend`, `SshBackend`/`SshConfig` (Phase 9.1), `SyncAdapter`, `ParallelBackend`, `ExperimentStore` trait, `JsonlStore`, `SqliteStore` (WAL mode, prepared statement caching) |
 | `mobius-bench` | `Evaluator`, `Matcher` trait, `DimensionScorer` trait, `GreedyTimestampMatcher`, `F1Scorer`, `ClassificationAccuracyScorer`, `TimestampMaeScorer` |
 | `mobius-claw` | `AgentLoop`, `Strategy` trait (10 impls: `GradientGuidedTuning`, `RandomSearch`, `GridSearch`, `TpeSearch` (log-scale), `NsgaTwo`, `UcbTreeSearch`, `CmaEs` (log-scale), `Pbt`, `AutoStrategy`, `Hyperband`), `AshaPruner`, `MedianPruner`, `build_strategy()`/`build_strategy_with_params()`, `LearningStore`, `compute_importance()`, `PreExecuteHook`/`PostEvaluateHook` traits (4 hooks: Budget, Regression, Overfitting, Constraints), `Decision`, `StopReason` |
 | `mobius-cli` | 17 clap commands: init, evaluate, status, history, run, suggest, sweep (`--parallel`), agent (`--strategy`, `--pruning`, `--store`), dashboard, importance, ask, tell, compare, enqueue, export |
@@ -48,12 +48,12 @@ mobius-core  (no internal deps)
 ```bash
 cargo fmt --all                                          # Format
 cargo clippy --workspace --all-targets -- -D warnings    # Lint (zero warnings)
-cargo test --workspace                                   # Test (161 passing)
-cargo test -p mobius-core                                # Core only (24 tests)
+cargo test --workspace                                   # Test (175 passing)
+cargo test -p mobius-core                                # Core only (33 tests)
 cargo test -p mobius-bench                               # Bench only (4 tests)
 cargo test -p mobius-claw                                # Claw only (74 tests)
-cargo test -p mobius-cli                                 # CLI only (25 tests)
-cargo test -p mobius-mcp                                 # MCP only (34 tests)
+cargo test -p mobius-cli                                 # CLI only (30 tests + 4 e2e)
+cargo test -p mobius-mcp                                 # MCP only (30 tests)
 ```
 
 ### Rules
@@ -153,3 +153,13 @@ Mobius stores state in `~/.mobius/`:
 2. Add `pub mod <name>;` to `commands/mod.rs`
 3. Add variant to `Commands` enum in `main.rs`
 4. Add match arm calling `commands::<name>::run()`
+
+### Adding a Compute Backend
+
+1. Implement `ComputeBackend` (sync) or `AsyncComputeBackend` (for I/O-heavy backends) in a new file under `crates/mobius-core/src/`
+2. Add `pub mod <name>_backend;` to `crates/mobius-core/src/lib.rs`
+3. Extend `ComputeSection` in `crates/mobius-core/src/config.rs` with an `Option<<Name>Config>` field
+4. Add a match arm in `crates/mobius-cli/src/commands/backend.rs::build_backend()`
+5. The new backend is now usable via `[compute] backend = "<name>"` in `mobius.toml`
+
+Reference implementation: `SshBackend` in `crates/mobius-core/src/ssh_backend.rs`.

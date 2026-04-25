@@ -15,8 +15,8 @@
 - **Language**: Rust (edition 2024, resolver 2)
 - **Workspace**: 5 crates (`mobius-core`, `mobius-bench`, `mobius-claw`, `mobius-cli`, `mobius-mcp`)
 - **License**: MIT OR Apache-2.0
-- **Tests**: 161 passing (24 core + 4 bench + 74 claw + 25 cli + 30 mcp + 4 e2e)
-- **Phase**: 8 complete; Phase 9 (SDK + Remote) planned
+- **Tests**: 175 passing (33 core + 4 bench + 74 claw + 30 cli + 30 mcp + 4 e2e)
+- **Phase**: 8 complete; Phase 9 underway (9.1 SSH remote backend shipped)
 
 ## Architecture Decisions
 
@@ -55,17 +55,19 @@ SubprocessBackend timeout-kill bug fix; SQLite WAL + PRAGMAs (5-10x writes); JSO
 ### Phase 8: Production ML Power Features [COMPLETE]
 Log-scale sampling auto-detection (TPE log-KDE, CMA-ES log-normalized covariance); `Hyperband` meta-scheduler; `MedianPruner`; fidelity-aware experiments; configurable strategy params via `[agent.strategy_params]`; `build_strategy_with_params()`; outcome constraints (upper/lower bounds); `mobius enqueue`; auto-retry; `mobius export` (CSV/JSON).
 
-### Not Yet Built (Phase 9 PLANNED)
-- Python SDK (`pymobius`) — PyO3 bindings
-- Go SDK (`go-mobius`) — CGo bindings
-- Remote compute backends — Modal, RunPod, SSH
-- Plugin system — dynamic scorer/strategy loading
-- Distributed coordination — multi-node agent swarms
-- Security & isolation — sandboxed execution, credential gateway
+### Phase 9: SDK + Remote Execution [IN PROGRESS]
+- [x] **9.1 SSH remote backend** — `SshBackend` shells out to system `ssh`, leverages `~/.ssh/config`, supports `remote_workdir`, `identity_file`, `port`, custom `-o options`. Wired via `[compute] backend = "ssh"` + `[compute.ssh]` block. 14 new tests.
+- [ ] 9.2 Python SDK (`pymobius`) — PyO3 bindings for core + bench
+- [ ] 9.3 Go SDK (`go-mobius`) — CGo bindings
+- [ ] 9.4 Modal / RunPod backends — cloud compute drivers
+- [ ] 9.5 Plugin system — dynamic scorer/strategy loading via shared libs
+- [ ] 9.6 Distributed coordination — multi-node agent swarms
+- [ ] 9.7 Security & isolation — sandboxed execution, credential gateway
 
-### Known Empty Slots
-- `examples/basketball-shot-detection/` — empty dir, referenced in CLAUDE.md
-- `examples/gpt2-training/` — empty dir
+### Examples (all populated)
+- `examples/hello-experiment/` — quadratic response surface, gradient_guided
+- `examples/basketball-shot-detection/` — multi-dim eval (F1+Acc+Timestamp), 12-shot GT
+- `examples/gpt2-training/` — Hyperband + log-scale + outcome constraints showcase
 
 ## Strategy Catalog (10)
 
@@ -105,6 +107,8 @@ Log-scale sampling auto-detection (TPE log-KDE, CMA-ES log-normalized covariance
 | Core types | `crates/mobius-core/src/experiment.rs` |
 | Schema | `crates/mobius-core/src/schema.rs` |
 | Compute backends | `crates/mobius-core/src/compute.rs` |
+| SSH backend (Phase 9.1) | `crates/mobius-core/src/ssh_backend.rs` |
+| Backend factory | `crates/mobius-cli/src/commands/backend.rs` |
 | JSONL store | `crates/mobius-core/src/store/jsonl.rs` |
 | SQLite store | `crates/mobius-core/src/store/sqlite.rs` |
 | Evaluator | `crates/mobius-bench/src/evaluator.rs` |
@@ -130,6 +134,6 @@ Mobius writes to `~/.mobius/`:
 ```bash
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace                # 161 passing
+cargo test --workspace                # 175 passing
 cargo build --release                 # LTO, single codegen unit, stripped
 ```
