@@ -1,0 +1,15 @@
+{
+  "predictions": [
+    {"timestamp": 12.6,  "label": "make", "confidence": 0.91, "shot_type": "3pt"},
+    {"timestamp": 28.5,  "label": "miss", "confidence": 0.74, "shot_type": "2pt"},
+    {"timestamp": 41.4,  "label": "make", "confidence": 0.88, "shot_type": "free_throw"},
+    {"timestamp": 42.1,  "label": "miss", "confidence": 0.55, "shot_type": "free_throw"},
+    {"timestamp": 67.7,  "label": "make", "confidence": 0.93, "shot_type": "2pt"},
+    {"timestamp": 88.4,  "label": "miss", "confidence": 0.62, "shot_type": "3pt"},
+    {"timestamp": 105.0, "label": "make", "confidence": 0.86, "shot_type": "2pt"},
+    {"timestamp": 124.5, "label": "make", "confidence": 0.59, "shot_type": "2pt"},
+    {"timestamp": 145.8, "label": "make", "confidence": 0.90, "shot_type": "3pt"},
+    {"timestamp": 168.2, "label": "make", "confidence": 0.81, "shot_type": "2pt"},
+    {"timestamp": 195.0, "label": "make", "confidence": 0.48, "shot_type": "2pt"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "shots": [
+    {"id": "shot-001", "time_sec": 12.4,  "result": "make", "shot_type": "3pt",      "shooter_jersey": 23, "shooter_team": "home", "edge_case_tags": []},
+    {"id": "shot-002", "time_sec": 28.7,  "result": "miss", "shot_type": "2pt",      "shooter_jersey": 11, "shooter_team": "away", "edge_case_tags": []},
+    {"id": "shot-003", "time_sec": 41.2,  "result": "make", "shot_type": "free_throw","shooter_jersey": 23, "shooter_team": "home", "edge_case_tags": ["free_throw"]},
+    {"id": "shot-004", "time_sec": 41.9,  "result": "make", "shot_type": "free_throw","shooter_jersey": 23, "shooter_team": "home", "edge_case_tags": ["free_throw"]},
+    {"id": "shot-005", "time_sec": 67.5,  "result": "make", "shot_type": "2pt",      "shooter_jersey": 7,  "shooter_team": "home", "edge_case_tags": ["fast_break"]},
+    {"id": "shot-006", "time_sec": 88.1,  "result": "miss", "shot_type": "3pt",      "shooter_jersey": 11, "shooter_team": "away", "edge_case_tags": []},
+    {"id": "shot-007", "time_sec": 105.3, "result": "make", "shot_type": "2pt",      "shooter_jersey": 5,  "shooter_team": "away", "edge_case_tags": []},
+    {"id": "shot-008", "time_sec": 124.8, "result": "miss", "shot_type": "2pt",      "shooter_jersey": 23, "shooter_team": "home", "edge_case_tags": ["contested"]},
+    {"id": "shot-009", "time_sec": 146.0, "result": "make", "shot_type": "3pt",      "shooter_jersey": 30, "shooter_team": "home", "edge_case_tags": []},
+    {"id": "shot-010", "time_sec": 168.4, "result": "make", "shot_type": "2pt",      "shooter_jersey": 11, "shooter_team": "away", "edge_case_tags": ["fast_break"]},
+    {"id": "shot-011", "time_sec": 189.7, "result": "miss", "shot_type": "3pt",      "shooter_jersey": 7,  "shooter_team": "home", "edge_case_tags": ["contested"]},
+    {"id": "shot-012", "time_sec": 210.0, "result": "make", "shot_type": "free_throw","shooter_jersey": 5,  "shooter_team": "away", "edge_case_tags": ["free_throw"]}
+  ]
+}

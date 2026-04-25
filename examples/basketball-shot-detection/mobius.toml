@@ -1,0 +1,51 @@
+[project]
+name = "basketball-shot-detection"
+version = "0.1.0"
+
+[experiment]
+budget_usd = 10.0
+cost_per_run = 0.0
+command = "bash detect.sh"
+timeout_secs = 30
+
+[experiment.targets]
+f1 = 0.85
+bench_score = 75.0
+
+[experiment.env_map]
+detection_threshold = "DETECT_THRESHOLD"
+lookback_window = "LOOKBACK_WINDOW"
+nms_seconds = "NMS_SECONDS"
+
+[experiment.sweep_space]
+detection_threshold = [0.30, 0.40, 0.50, 0.60, 0.70]
+lookback_window = [3, 5, 7, 10]
+nms_seconds = [0.5, 1.0, 1.5, 2.0]
+
+[bench]
+match_window = 6.0
+
+[[bench.dimensions]]
+name = "Detection"
+weight = 0.50
+scorer = "f1"
+
+[[bench.dimensions]]
+name = "Classification"
+weight = 0.30
+scorer = "accuracy"
+
+[[bench.dimensions]]
+name = "Timestamp"
+weight = 0.20
+scorer = "timestamp_mae"
+
+[agent]
+strategies = ["auto", "tpe", "gradient_guided"]
+plateau_window = 5
+plateau_threshold = 0.01
+max_retries = 1
+
+[agent.strategy_params]
+tpe_gamma = 0.25
+nsga_objectives = ["f1", "precision"]
