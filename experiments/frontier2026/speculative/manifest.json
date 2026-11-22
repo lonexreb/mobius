@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "note": "Pinned once. Changing anything here changes evaluator_sha256 and invalidates comparison with earlier runs.",
+  "search_space": {
+    "lookahead_tokens": [2, 4, 8, 16],
+    "draft_p_min": [0.5, 0.75, 0.9]
+  },
+  "fixed_spec": {"lookahead_tokens": 4, "draft_p_min": 0.75},
+  "generation": {
+    "max_output_tokens": 96,
+    "temperature": 0,
+    "seed": 2026,
+    "request_concurrency": 1,
+    "ctx_size": 4096,
+    "system_prompt": "You are a helpful assistant.",
+    "chat_template": "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n",
+    "warmup_prompt": "Say hello.",
+    "warmup_requests": 1
+  },
+  "statistics": {"bootstrap_resamples": 2000, "bootstrap_seed": 2026, "ci": 0.95},
+  "local_engine": {
+    "name": "llama.cpp llama-server (Metal)",
+    "label": "LOCAL: not comparable to the Qwen3-8B / EAGLE-3 / vLLM CUDA flagship",
+    "target": {"ollama": "qwen2.5:7b", "env": "MOBIUS_LAB_TARGET_GGUF"},
+    "draft": {"ollama": "qwen2.5:1.5b", "env": "MOBIUS_LAB_DRAFT_GGUF"}
+  },
+  "flagship": {
+    "status": "PREPARED, NOT RUN: no CUDA GPU, no vLLM, no spend authorization",
+    "target_model": {"repo": "Qwen/Qwen3-8B", "revision": "b968826d9c46dd6066d109eabc6255188de91218", "license": "apache-2.0"},
+    "speculator": {"repo": "RedHatAI/Qwen3-8B-speculator.eagle3", "revision": "08610ffa01dd9f16731fe8f627b85905b6aa51c4", "license": "apache-2.0"},
+    "revisions_read_from": "https://huggingface.co/api/models/<repo> on 2026-11-22",
+    "engine": "vllm (version unverified: not installed here)",
+    "serve_reference": "https://docs.vllm.ai/projects/speculators/en/latest/user_guide/tutorials/serve_vllm/",
+    "search_space_unverified": {"num_speculative_tokens": [2, 3, 4, 5]}
+  }
+}

@@ -1,0 +1,591 @@
+{
+  "schema_version": 1,
+  "seed": 2026,
+  "selection_rule": "(pre-registered, do not tune after seeing results):\n  pool   = first POOL rows in file order with MIN_CHARS <= len(prompt) <= MAX_CHARS\n  pick   = PER_DOMAIN rows with the smallest sha256(\"{SEED}:{source}:{row_id}\")\n  splits = sort picked rows by char length; shortest third -> dev, middle -> audit, longest -> sealed\nThe length shift between dev and audit/sealed is deliberate (handoff section 5).\nOnly the prompt field is extracted; answers, solutions and test cases never leave this script.",
+  "sources": [
+    {
+      "domain": "math",
+      "repo": "HuggingFaceH4/MATH-500",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "file": "test.jsonl",
+      "file_checksum": {
+        "git_blob_sha1": "2376b9a194b46c0790e197c91b7249e5f88ac09b"
+      },
+      "license": "not declared in dataset card (MATH derivative); prompt text kept out of git",
+      "original_split": "test",
+      "prompt_field": "problem",
+      "id_field": "unique_id",
+      "pool": 200,
+      "contamination": "public 2021-era benchmark; used as an inference workload only, no capability claim",
+      "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500",
+      "selected": 24,
+      "rejected": {
+        "too_short_or_long": 14
+      }
+    },
+    {
+      "domain": "code",
+      "repo": "livecodebench/code_generation_lite",
+      "revision": "0fe84c3912ea0c4d4a78037083943e8f0c4dd505",
+      "file": "test6.jsonl",
+      "file_checksum": {
+        "lfs_sha256": "bb4c364f71921c4495a6ad15abe1a927350b720009f4933e2e71f8af0f6fd1f5",
+        "note": "from HF metadata; only the first rows are streamed, file not hashed locally"
+      },
+      "license": "cc (as declared in dataset card)",
+      "original_split": "test (release_v6 file)",
+      "prompt_field": "question_content",
+      "id_field": "question_id",
+      "pool": 60,
+      "contamination": "contest problems dated 2025; used as an inference workload only",
+      "url": "https://huggingface.co/datasets/livecodebench/code_generation_lite",
+      "selected": 24,
+      "rejected": {
+        "too_short_or_long": 0
+      }
+    },
+    {
+      "domain": "chat",
+      "repo": "HuggingFaceH4/ultrachat_200k",
+      "revision": "8049631c405ae6576f93f445c6b8166f76f5505a",
+      "file": "data/test_sft-00000-of-00001-f7dfac4afe5b93f4.parquet",
+      "file_checksum": {
+        "lfs_sha256": "c18fd6e77395577652bdefbc5a87044ea799e989451ecfca5c6cf977ae5c6f70"
+      },
+      "license": "mit",
+      "original_split": "test_sft",
+      "prompt_field": "prompt",
+      "id_field": "prompt_id",
+      "pool": 200,
+      "contamination": "synthetic dialogues from 2023; first user turn only",
+      "url": "https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k",
+      "selected": 24,
+      "rejected": {
+        "too_short_or_long": 4
+      }
+    }
+  ],
+  "splits": {
+    "dev": {
+      "sha256": "0484c036ac8f33ccd14133c9893ae114c54e652647d4d6dc903e3e3418cddf17",
+      "count": 24,
+      "role": "visible to proposer and policy"
+    },
+    "audit": {
+      "sha256": "e9096f8f1c51c989d23a621da13098bc640dbb6703cc4dd8f4c486a05e5d8905",
+      "count": 24,
+      "role": "independent; queried only as a counted verification"
+    },
+    "sealed": {
+      "sha256": "5476ca7fd5b3d5ec021b78f86b104920bd10b70b3a145368fbe31ec7794dee44",
+      "count": 24,
+      "role": "never served by the API; evaluated only after policies are frozen"
+    }
+  },
+  "prompts": [
+    {
+      "prompt_id": "math:test/prealgebra/192.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 42,
+      "sha256": "7f472ed5afd0fbc0f395729a07ffaf91921e6ca65abb1fca618e2724e9158e98"
+    },
+    {
+      "prompt_id": "math:test/prealgebra/505.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 42,
+      "sha256": "a4a92af384d88e0b330c09d9a483219e971a0242983ce732018b96f980308e32"
+    },
+    {
+      "prompt_id": "math:test/intermediate_algebra/428.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 55,
+      "sha256": "5b1d584cfe23d7dfff67df8a57030f07ab525f50d4dbe0cb7cb63ae686a80456"
+    },
+    {
+      "prompt_id": "math:test/precalculus/1105.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 79,
+      "sha256": "650570c0a1a8409fee85c38cfba9b25c9d2aff2c2f07af073c7adf503515f715"
+    },
+    {
+      "prompt_id": "math:test/intermediate_algebra/623.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 99,
+      "sha256": "af2fadb634c99ff95acd815906f568366fd4ea205a093d31128e8cce8ebd3d23"
+    },
+    {
+      "prompt_id": "math:test/algebra/2214.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 100,
+      "sha256": "d9f531b9527df401c846d979a358299336d33012e319ebcc9f83a4dcda7f3297"
+    },
+    {
+      "prompt_id": "math:test/algebra/972.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 105,
+      "sha256": "7cc8cf550e3ca3744c2621ffd8fea55f9b9f93b1078f1bd6fa10384155fe3071"
+    },
+    {
+      "prompt_id": "math:test/algebra/841.json",
+      "domain": "math",
+      "split": "dev",
+      "chars": 107,
+      "sha256": "08306232ef9ba7aa229594b9a52f8dcebd100aae1b7197cc844ad8f9725b7604"
+    },
+    {
+      "prompt_id": "math:test/algebra/109.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 109,
+      "sha256": "36fd071c1bb427b553af4b7c8dd35d50872c597b264451825e5c8c160b03f641"
+    },
+    {
+      "prompt_id": "math:test/algebra/873.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 109,
+      "sha256": "ecf5fa925de2e2eca47dcd1ba3c46b47b24a05599ac0464d90fecafaa4fc740f"
+    },
+    {
+      "prompt_id": "math:test/intermediate_algebra/1408.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 118,
+      "sha256": "e69c96862ea91bd8a379f67a4df22c9e4fea1e7ecbc86c69904ecdc851068fb3"
+    },
+    {
+      "prompt_id": "math:test/counting_and_probability/51.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 145,
+      "sha256": "db4c0ed2fbf94208aa7df686359ca47be990c9a58a2662bca18e222d94614f79"
+    },
+    {
+      "prompt_id": "math:test/prealgebra/1922.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 152,
+      "sha256": "210778075950cc2d47660836d13b39a298928d9da94fb9235240c6234f2c253e"
+    },
+    {
+      "prompt_id": "math:test/prealgebra/1655.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 177,
+      "sha256": "1e0d6c4c3aa3b6ac881541e4822b85c0f2ba7ae5e38bc9d061befde5dc530c56"
+    },
+    {
+      "prompt_id": "math:test/precalculus/927.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 192,
+      "sha256": "659b49f54a96ac02cd3f3cd3e58db24dce33f501220b7526d4dcd736ea5efb2c"
+    },
+    {
+      "prompt_id": "math:test/prealgebra/1807.json",
+      "domain": "math",
+      "split": "audit",
+      "chars": 194,
+      "sha256": "21082726712a2d5c809d733eaca80ff27f95176f8f95e1f34727b06b2bfbba5b"
+    },
+    {
+      "prompt_id": "math:test/prealgebra/1686.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 202,
+      "sha256": "cf868a55079c64b7ba1e8e04ffeb846d060675634d714df5734a5b3881029309"
+    },
+    {
+      "prompt_id": "math:test/precalculus/1300.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 219,
+      "sha256": "fdc8aba1c1ade2de891c8acfc7e126e96fde232077c7c1b25ac07b4cb18aee37"
+    },
+    {
+      "prompt_id": "math:test/intermediate_algebra/1388.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 231,
+      "sha256": "2ea1f202b421671b727447ed61a726de3c0a20005cccbd5885b5c7378ab69ceb"
+    },
+    {
+      "prompt_id": "math:test/counting_and_probability/159.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 262,
+      "sha256": "61b7e29cf3ce3ee98c5fb5e8a1d18b5ac193be125c4bfeb5fbe287ec847502e2"
+    },
+    {
+      "prompt_id": "math:test/intermediate_algebra/345.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 306,
+      "sha256": "ced521d94764b4a34fa453c5cbbbca6c49fcdc1de4ca77df22b8f56842d3f563"
+    },
+    {
+      "prompt_id": "math:test/precalculus/117.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 531,
+      "sha256": "50a60fb156488ac69ce8984b7693ec3587886b19836e2074e8a43d7f80ef064c"
+    },
+    {
+      "prompt_id": "math:test/geometry/880.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 546,
+      "sha256": "88bd1d429ff4da88607a105612c2de0c8e98bd61cfdfa852a96a537fea183c3b"
+    },
+    {
+      "prompt_id": "math:test/algebra/1349.json",
+      "domain": "math",
+      "split": "sealed",
+      "chars": 731,
+      "sha256": "1e59b8cae8b19bb52556b1c9d01148b1ba59b0db7e8792acbbc566489e305f3b"
+    },
+    {
+      "prompt_id": "code:abc387_a",
+      "domain": "code",
+      "split": "dev",
+      "chars": 455,
+      "sha256": "dfed8e18eaff7798a01d3d9dcf6bdc9d75cbebae4047eb07ab484598ff0e5688"
+    },
+    {
+      "prompt_id": "code:abc392_a",
+      "domain": "code",
+      "split": "dev",
+      "chars": 651,
+      "sha256": "d9914786855f03c510d2c7158219588196b092661f7d8d01c4bf5b1e121a348a"
+    },
+    {
+      "prompt_id": "code:abc389_a",
+      "domain": "code",
+      "split": "dev",
+      "chars": 677,
+      "sha256": "a887ae3a3f706fbd361d5077d2679bf829ebb512ff533fa79da49d89ca5bee90"
+    },
+    {
+      "prompt_id": "code:abc394_a",
+      "domain": "code",
+      "split": "dev",
+      "chars": 702,
+      "sha256": "2a36ed6ae687ba5cd25a829b54dae1e460370c207996a861e833f9ee34f3830a"
+    },
+    {
+      "prompt_id": "code:abc387_c",
+      "domain": "code",
+      "split": "dev",
+      "chars": 785,
+      "sha256": "850e24d0abe6f6aae62960fc0fe89684b5a8635ee85affdea07af9de57fec17b"
+    },
+    {
+      "prompt_id": "code:abc392_g",
+      "domain": "code",
+      "split": "dev",
+      "chars": 840,
+      "sha256": "35ab6d21c527808488def99eb0cedc18e335722e213a8b542c74b250fa327739"
+    },
+    {
+      "prompt_id": "code:abc387_f",
+      "domain": "code",
+      "split": "dev",
+      "chars": 856,
+      "sha256": "12aef3e7c823ea1a343239090bf8d3da9e235f0862f122f0f4f81fc6ea0d8b69"
+    },
+    {
+      "prompt_id": "code:abc394_b",
+      "domain": "code",
+      "split": "dev",
+      "chars": 871,
+      "sha256": "d393a93eb5a4a712c5a8b83bc8bd7cfb71c1a82a859292ec2d7f02d373afe976"
+    },
+    {
+      "prompt_id": "code:abc395_c",
+      "domain": "code",
+      "split": "audit",
+      "chars": 995,
+      "sha256": "ba89472f5f5e7e10c0cf7593c9452f44862376b24a9ad88ec14bf7973e6594e1"
+    },
+    {
+      "prompt_id": "code:abc392_b",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1084,
+      "sha256": "4634a3ddd2af27ee383eda76b1bb1ad3b08a175e5f32fba39699ea7d151e8552"
+    },
+    {
+      "prompt_id": "code:abc396_f",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1127,
+      "sha256": "8427e2470b074d79d11207da099381369a01b4b63af1c5cd5f49f42ea989d07b"
+    },
+    {
+      "prompt_id": "code:abc392_d",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1292,
+      "sha256": "8d786c150cfb6b27fc2bf5f8b5d02990316449b6048bdc357ba2d6fad2ef0a3a"
+    },
+    {
+      "prompt_id": "code:abc393_e",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1311,
+      "sha256": "952f68981d77da7d584f225a0314a9d459fade8549a6835fbcf8536e7bf7a954"
+    },
+    {
+      "prompt_id": "code:abc388_d",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1315,
+      "sha256": "a944cbb1153dd2b429eb4c7fb885b357f775be4392e4cf6f727f6159415dbd1c"
+    },
+    {
+      "prompt_id": "code:abc391_b",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1322,
+      "sha256": "e43e152467d0aa4b5e2e7119123367414690675d026adbb58c82d9f2ebb1824d"
+    },
+    {
+      "prompt_id": "code:abc393_d",
+      "domain": "code",
+      "split": "audit",
+      "chars": 1331,
+      "sha256": "67037ab617084bb72fc27f880ac83564e770477180280d713c10adc897d58934"
+    },
+    {
+      "prompt_id": "code:abc391_g",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1396,
+      "sha256": "d6e751a276f75ed68542deac5f97abcd4ef56e33e632ac05d3e08e6b06b25e4c"
+    },
+    {
+      "prompt_id": "code:abc388_e",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1416,
+      "sha256": "fcce2cc3d4c3473e8468953773bef682d3a7232db2a470b1ce1cf4a16738820d"
+    },
+    {
+      "prompt_id": "code:abc393_f",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1538,
+      "sha256": "b872ee65e956ce39f7b7027e5fbda450725d1c8ff8ebf038c67ef9dc4d1a0626"
+    },
+    {
+      "prompt_id": "code:abc391_f",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1733,
+      "sha256": "5e2335e7c72956299fa241e3b5162207b15ae1a397ed018e2427529b94f06b2b"
+    },
+    {
+      "prompt_id": "code:abc391_d",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1787,
+      "sha256": "fc210c5279503a009d02354e9cdc0ef0015320932cd644064ad2a898ad8228ca"
+    },
+    {
+      "prompt_id": "code:abc394_e",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1890,
+      "sha256": "727e661a6b390c478c298d8e17d367272f8fd523b95a1dbc89959320b46e3d7a"
+    },
+    {
+      "prompt_id": "code:abc396_b",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 1894,
+      "sha256": "a4e95f2fd5332a4481157debaa1aaefb17d8742a71ed96a2730e1d84d7af8cbb"
+    },
+    {
+      "prompt_id": "code:abc390_d",
+      "domain": "code",
+      "split": "sealed",
+      "chars": 2057,
+      "sha256": "2205633848808361ce5fcc9277d269f24e6157dba79065d75e646f92ae6e9900"
+    },
+    {
+      "prompt_id": "chat:5dac3c072ba477af9ed0c71a31a806f307d7ea839a7977e3befa7d9b060d5bee",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 64,
+      "sha256": "5dac3c072ba477af9ed0c71a31a806f307d7ea839a7977e3befa7d9b060d5bee"
+    },
+    {
+      "prompt_id": "chat:127818f822e13a05929255bbbe1d8fdbaf28e78cefee5962c89a60387826ee15",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 92,
+      "sha256": "127818f822e13a05929255bbbe1d8fdbaf28e78cefee5962c89a60387826ee15"
+    },
+    {
+      "prompt_id": "chat:9db8ca53398bc1949616927646a167db7734ad3a5cc9b537818ae0901227aa91",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 97,
+      "sha256": "9db8ca53398bc1949616927646a167db7734ad3a5cc9b537818ae0901227aa91"
+    },
+    {
+      "prompt_id": "chat:a8d14d2cfabb25a15ca3875c4a3282ba52741a9cc4155b707d252b2b5c3a1dde",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 128,
+      "sha256": "a8d14d2cfabb25a15ca3875c4a3282ba52741a9cc4155b707d252b2b5c3a1dde"
+    },
+    {
+      "prompt_id": "chat:1a130ca33f22f04c56a0ceefa14d2745d27737aace35649f475166d3e39060b0",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 132,
+      "sha256": "1a130ca33f22f04c56a0ceefa14d2745d27737aace35649f475166d3e39060b0"
+    },
+    {
+      "prompt_id": "chat:3a38e720176368c393cfa3827aefd4be36ca9c542de61bceedaf2b7f2b86fa97",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 133,
+      "sha256": "3a38e720176368c393cfa3827aefd4be36ca9c542de61bceedaf2b7f2b86fa97"
+    },
+    {
+      "prompt_id": "chat:0ca9d08f54a4965452715224fdbe57a9a55f011c7e75b032f7403f1ecca86b66",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 246,
+      "sha256": "0ca9d08f54a4965452715224fdbe57a9a55f011c7e75b032f7403f1ecca86b66"
+    },
+    {
+      "prompt_id": "chat:19d2300a4da5c0a408d4158ffec8a3ce123f07cbee037a2e869e1142f07a81fc",
+      "domain": "chat",
+      "split": "dev",
+      "chars": 421,
+      "sha256": "19d2300a4da5c0a408d4158ffec8a3ce123f07cbee037a2e869e1142f07a81fc"
+    },
+    {
+      "prompt_id": "chat:2024d0d91a9d3ea466c69e1b1dbfc52057c613e27ebe54ec05b8a50c951e352b",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 439,
+      "sha256": "2024d0d91a9d3ea466c69e1b1dbfc52057c613e27ebe54ec05b8a50c951e352b"
+    },
+    {
+      "prompt_id": "chat:a1a577759ac9b993acef6ac8499eab8f7457f4bd3a895632e2bd27db22e70a23",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 448,
+      "sha256": "a1a577759ac9b993acef6ac8499eab8f7457f4bd3a895632e2bd27db22e70a23"
+    },
+    {
+      "prompt_id": "chat:7f24181c1d75f03c62c160c759447a6b97e4ff9dee605cbd525e3bf59d05dddb",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 514,
+      "sha256": "7f24181c1d75f03c62c160c759447a6b97e4ff9dee605cbd525e3bf59d05dddb"
+    },
+    {
+      "prompt_id": "chat:17705fb3dead237045246c9b0276bd30906793adb1a1e76437836a65cc431aa7",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 548,
+      "sha256": "17705fb3dead237045246c9b0276bd30906793adb1a1e76437836a65cc431aa7"
+    },
+    {
+      "prompt_id": "chat:15121bd41ee5840cdfb6718869f20a2049aaaa905bd642fdaa9f59090847f9b6",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 552,
+      "sha256": "15121bd41ee5840cdfb6718869f20a2049aaaa905bd642fdaa9f59090847f9b6"
+    },
+    {
+      "prompt_id": "chat:5eeddc102d37956d8086907087c915116e70e7f3c3905ee3139d271e177813c0",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 558,
+      "sha256": "5eeddc102d37956d8086907087c915116e70e7f3c3905ee3139d271e177813c0"
+    },
+    {
+      "prompt_id": "chat:5c48dd53ca3026b3c775d8a5fd9cd5ae83169be97cd06adf70ff71c392078d2b",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 583,
+      "sha256": "5c48dd53ca3026b3c775d8a5fd9cd5ae83169be97cd06adf70ff71c392078d2b"
+    },
+    {
+      "prompt_id": "chat:1ae018fc8fa3b37773ce56009f82e817510f62705cf7848785aae453b533f858",
+      "domain": "chat",
+      "split": "audit",
+      "chars": 598,
+      "sha256": "1ae018fc8fa3b37773ce56009f82e817510f62705cf7848785aae453b533f858"
+    },
+    {
+      "prompt_id": "chat:9e048a6107a60b6a55add2e6b22e9e8aa9001a844294289d9aac16e2bbaebbe3",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 627,
+      "sha256": "9e048a6107a60b6a55add2e6b22e9e8aa9001a844294289d9aac16e2bbaebbe3"
+    },
+    {
+      "prompt_id": "chat:06ea949514c094fae1e271d4489e2e1a1feeaff31375bde04c8a1d91064d1727",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 772,
+      "sha256": "06ea949514c094fae1e271d4489e2e1a1feeaff31375bde04c8a1d91064d1727"
+    },
+    {
+      "prompt_id": "chat:68028008e03ee23117a5ecedc21b6f873a83bedf541bcfb975891d658d23eb2f",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 972,
+      "sha256": "68028008e03ee23117a5ecedc21b6f873a83bedf541bcfb975891d658d23eb2f"
+    },
+    {
+      "prompt_id": "chat:c9b295cb5ecb33c9bfc4431d5fa1a8016703eb53c08513dd048866e8448554a8",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 1627,
+      "sha256": "c9b295cb5ecb33c9bfc4431d5fa1a8016703eb53c08513dd048866e8448554a8"
+    },
+    {
+      "prompt_id": "chat:eedf84f9e787a8e80acc54d5cf2f6757e7ab464aab4aa5906b6b013ca08d2e2c",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 1883,
+      "sha256": "eedf84f9e787a8e80acc54d5cf2f6757e7ab464aab4aa5906b6b013ca08d2e2c"
+    },
+    {
+      "prompt_id": "chat:26afb4f9bffc82fbbfdcaa8f0eec0833780e411799dceed12d639c71ce08da25",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 1989,
+      "sha256": "26afb4f9bffc82fbbfdcaa8f0eec0833780e411799dceed12d639c71ce08da25"
+    },
+    {
+      "prompt_id": "chat:a158a189a6aa1c32c9970a61189e24f1edecbed932abac9166a3c6992167d83d",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 3552,
+      "sha256": "a158a189a6aa1c32c9970a61189e24f1edecbed932abac9166a3c6992167d83d"
+    },
+    {
+      "prompt_id": "chat:99d613332000f3807d6e59845b126ea9e363869bce4d93c35077fbdbf91d4e44",
+      "domain": "chat",
+      "split": "sealed",
+      "chars": 3721,
+      "sha256": "99d613332000f3807d6e59845b126ea9e363869bce4d93c35077fbdbf91d4e44"
+    }
+  ]
+}

@@ -8,3 +8,15 @@
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Möbius Lab: local state, prompt text cache, run artifacts, envs
+experiments/frontier2026/speculative/data/
+apps/api/.venv/
+apps/api/var/
+apps/web/node_modules/
+apps/web/dist/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.env
+.env.local
