@@ -14,7 +14,10 @@ const W = 720, H = 280, PAD = { top: 20, right: 24, bottom: 46, left: 52 };
 export function SpeedupChart({ experiments, onSelect }: Props) {
   const [showInvalid, setShowInvalid] = useState(true);
   const [hover, setHover] = useState<string | null>(null);
-  const scored = experiments.filter((e) => e.kind === "candidate" && e.metrics.speedup_vs_target !== undefined);
+  // plot only runs with a complete, finite measurement; a partial one would poison the scale
+  const finite = (x: number | undefined) => typeof x === "number" && Number.isFinite(x);
+  const scored = experiments.filter((e) => e.kind === "candidate" && finite(e.metrics.speedup_vs_target)
+    && finite(e.metrics.speedup_ci_low) && finite(e.metrics.speedup_ci_high));
   const shown = scored.filter((e) => showInvalid || e.state === "VALID");
 
   if (scored.length === 0) {

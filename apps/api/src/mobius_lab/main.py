@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import hashlib
 import json
 import os
@@ -26,6 +27,15 @@ API_DIR = Path(__file__).resolve().parents[2]
 def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = None,
                run_inline: bool = False) -> FastAPI:
     var = Path(var_dir or API_DIR / "var")
+    var.mkdir(parents=True, exist_ok=True)
+    # One process per ledger. Startup recovery cancels "in-flight" runs, so a second instance
+    # (a stray import, a second uvicorn) must fail here instead of clobbering a live study.
+    lock_file = (var / "lab.lock").open("w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        lock_file.close()
+        raise RuntimeError(f"another Möbius Lab API process already owns {var}; stop it first") from exc
     ledger = Ledger(db_path or os.environ.get("MOBIUS_LAB_DB") or var / "lab.sqlite")
     ev = adapters.load_evaluator()
     orch = Orchestrator(ledger, var, ev, run_inline=run_inline)
@@ -33,6 +43,7 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
 
     app = FastAPI(title="Möbius Lab", version=VERSION)
     app.state.ledger, app.state.orchestrator, app.state.recovered = ledger, orch, recovered
+    app.state.lock_file = lock_file
     origins = os.environ.get("MOBIUS_LAB_CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173").split(",")
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["*"])
     api = APIRouter(prefix="/api/v1")
@@ -45,12 +56,16 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
 
     def study_out(study: dict) -> dict[str, Any]:
         exps = ledger.experiments(study["id"])
-        valid = [e for e in exps if e["kind"] == "candidate" and e["state"] == "VALID" and e["split"] == "dev"]
+        latest = {policies.key(e["config"]): e for e in exps if e["kind"] == "candidate" and e["split"] == "dev"}
+        # latest run per config, and never one the controller rejected or flagged as unstable
+        valid = [e for e in latest.values()
+                 if e["state"] == "VALID" and e["verdict"] not in ("reject", "flag_investigate")]
         decisions = ledger.decisions(study["id"])
         return {**study, "budget": ledger.budget(study), "evidence_label": report.MODE_LABELS[study["mode"]],
                 "best_valid": max(valid, key=lambda e: e["metrics"]["speedup_vs_target"]) if valid else None,
                 "promoted": next((e for e in exps if e["verdict"] == "promoted"), None),
-                "latest_decision": decisions[-1] if decisions else None}
+                "latest_decision": decisions[-1] if decisions else None,
+                "failure_reason": ledger.last_error(study["id"]) if study["state"] == "FAILED" else None}
 
     def start_blockers(study: dict) -> list[str]:
         conn = adapters.connections()
@@ -241,6 +256,8 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
         study = get_study(body.study_id)
         if study["mode"] != "autolab":
             raise HTTPException(409, "imports attach only to studies created with mode=autolab")
+        if study["approved_spend_usd"] > 0 and not study["budget_approved"]:
+            raise HTTPException(409, "the study's non-zero spend cap has not been approved")
         if body.hill_verdict == "pending":
             raise HTTPException(409, "run has no Hill verdict yet; a submission is not a completed evaluation")
         if body.hill_verdict == "scored" and body.artifact is None:
@@ -270,11 +287,16 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
             raise HTTPException(409, f"budget gate refused the import: {exc}") from exc
         ledger.link_import("autolab", body.external_run_id, exp["id"])
         ledger.transition(exp["id"], "RUNNING")
+        cost = {"autolab_run": body.cost_usd}
+        source = f"autolab run {body.external_run_id}" + ("" if body.cost_usd is not None else " (amount not reported)")
         result = (RunResult("ok", artifact=body.artifact) if body.hill_verdict == "scored"
                   else RunResult("failed", error=body.failure or "Hill reported failure"))
-        exp = orch.record_result(study, exp, result, None, actual_cost={"autolab_run": body.cost_usd},
-                                 cost_source=f"autolab run {body.external_run_id}"
-                                             + ("" if body.cost_usd is not None else " (amount not reported)"))
+        try:
+            exp = orch.record_result(study, exp, result, None, actual_cost=cost, cost_source=source)
+        except Exception as exc:  # malformed artifact: record the failure instead of leaving a RUNNING row
+            exp = orch.record_result(study, exp, RunResult("failed", error=f"artifact could not be ingested: "
+                                                                           f"{type(exc).__name__}: {exc}"),
+                                     None, actual_cost=cost, cost_source=source)
         # judge what was imported; never dispatch new work from an import
         while True:
             try:
@@ -283,7 +305,7 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
                 break
             if action.kind not in policies.VERDICT_KINDS:
                 break
-            ledger.set_verdict(action.target_experiment_id, action.kind)
+            ledger.set_verdict(list(action.evidence_ids) or action.target_experiment_id, action.kind)
             orch._decide(study["id"], action, action.target_experiment_id)
         return {"duplicate": False, "experiment": ledger.experiment(exp["id"])}
 

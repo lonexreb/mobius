@@ -55,12 +55,19 @@ class LocalAdapter:
         argv += ["--target-only"] if exp["config"] is None else ["--config", json.dumps(exp["config"])]
         if reference_path is not None:
             argv += ["--reference", str(reference_path)]
+        if self._cancelled.is_set():
+            return RunResult("cancelled", error="cancelled by operator")
         self._proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                       start_new_session=True)  # own process group so cancel reaches llama-server
         try:
             _, err = self._proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            self._kill()
+            self._signal(15)
+            try:
+                self._proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                self._signal(9)
+                self._proc.communicate()
             return RunResult("timeout", error=f"evaluator exceeded {timeout:.0f}s")
         if self._cancelled.is_set():
             return RunResult("cancelled", error="cancelled by operator")
@@ -71,20 +78,17 @@ class LocalAdapter:
         except (OSError, json.JSONDecodeError) as exc:
             return RunResult("failed", error=f"evaluator produced no readable artifact: {exc}")
 
-    def _kill(self) -> None:
+    def _signal(self, sig: int) -> None:
         if self._proc and self._proc.poll() is None:
             try:
-                os.killpg(self._proc.pid, 15)
+                os.killpg(self._proc.pid, sig)
             except ProcessLookupError:
                 pass
-            try:
-                self._proc.communicate(timeout=15)
-            except subprocess.TimeoutExpired:
-                os.killpg(self._proc.pid, 9)
 
     def cancel(self) -> None:
+        """Called from a request thread: flag and signal only. The study thread owns the pipes and reaps."""
         self._cancelled.set()
-        self._kill()
+        self._signal(15)
 
 
 class ReplayAdapter:

@@ -127,6 +127,11 @@ class Ledger:
             self.conn.execute("INSERT INTO events (study_id, type, data, created_at) VALUES (?,?,?,?)",
                               (study_id, type_, json.dumps({"study_id": study_id, **data}), now()))
 
+    def last_error(self, study_id: str) -> str | None:
+        row = self._one("SELECT data FROM events WHERE study_id=? AND type='source.error' ORDER BY id DESC LIMIT 1",
+                        study_id)
+        return row and (row["data"].get("reason") or row["data"].get("error"))
+
     def events_after(self, study_id: str, after: int, limit: int = 200) -> list[dict]:
         return self._all("SELECT * FROM events WHERE study_id=? AND id>? ORDER BY id LIMIT ?", study_id, after, limit)
 
@@ -177,8 +182,9 @@ class Ledger:
                            estimated_cost_usd: float | None, source: dict | None = None) -> dict:
         """Atomically check every budget and create a QUEUED experiment with its reservation.
 
-        The idempotency key is (study, step number): two racing loops that both decide
-        "step N" collide on the UNIQUE constraint, so a retried start cannot double-run or double-charge.
+        Double-run protection is the single study loop per process (Orchestrator.launch) plus the
+        single-process ledger lock (main.create_app). The UNIQUE (study, step) key is a last line of
+        defence if either is ever bypassed.
         """
         sid = study["id"]
         with self.tx() as c:
@@ -247,9 +253,24 @@ class Ledger:
                           " created_at) VALUES (?,?,?,?,?,?,?)",
                           (exp["study_id"], exp["id"], "spend", category, amount, source, now()))
 
-    def set_verdict(self, eid: str, verdict: str) -> None:
+    def set_verdict(self, eids: str | list[str], verdict: str) -> None:
         with self.lock:
-            self.conn.execute("UPDATE experiments SET verdict=? WHERE id=?", (verdict, eid))
+            for eid in [eids] if isinstance(eids, str) else eids:
+                self.conn.execute("UPDATE experiments SET verdict=? WHERE id=?", (verdict, eid))
+
+    def force_study_state(self, sid: str, state: str) -> None:
+        """Crash path only: record FAILED even where the normal transition table would refuse."""
+        with self.lock:
+            self.conn.execute("UPDATE studies SET state=? WHERE id=? AND state NOT IN ('COMPLETED','CANCELLED')",
+                              (state, sid))
+
+    def untold(self, sid: str) -> list[dict]:
+        return self._all("SELECT * FROM experiments WHERE study_id=? AND state='VALID' AND kind='candidate'"
+                         " AND split='dev' AND rust_told=0 ORDER BY seq", sid)
+
+    def unmark_told(self, eid: str) -> None:
+        with self.lock:
+            self.conn.execute("UPDATE experiments SET rust_told=0 WHERE id=?", (eid,))
 
     def mark_told(self, eid: str) -> bool:
         """True exactly once per experiment: guards the derived Rust history against re-import."""

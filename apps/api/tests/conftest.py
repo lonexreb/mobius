@@ -79,12 +79,20 @@ class FixtureAdapter:
 
 @pytest.fixture
 def make_client(tmp_path):
+    apps = []
+
     def build(adapter=None):
+        for old in apps:  # simulate the previous process exiting: it releases the ledger lock
+            old.state.lock_file.close()
+        apps.clear()
         app = create_app(db_path=tmp_path / "lab.sqlite", var_dir=tmp_path / "var", run_inline=True)
         adapter = adapter or FixtureAdapter()
         app.state.orchestrator.adapter_factory = lambda study: adapter
+        apps.append(app)
         return TestClient(app), adapter
-    return build
+    yield build
+    for old in apps:
+        old.state.lock_file.close()
 
 
 @pytest.fixture

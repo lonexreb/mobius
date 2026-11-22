@@ -61,14 +61,17 @@ function Timeline({ experiments, selected, onSelect }: { experiments: Experiment
   );
 }
 
-function DecisionPanel({ decisions, running, onSelect }: { decisions: Decision[]; running: boolean; onSelect: (id: string) => void }) {
+function DecisionPanel({ decisions, state, onSelect }: { decisions: Decision[]; state: string; onSelect: (id: string) => void }) {
+  const heading = state === "RUNNING" ? "Current step"
+    : state === "COMPLETED" ? "Final decision"
+    : `Latest decision (study ${state.toLowerCase()}, not final)`;
   const latest = decisions[decisions.length - 1];
   if (!latest) {
     return <div className="empty"><p>No decision yet.</p><p className="dim">Start the study: Möbius first measures the target-only baseline, because nothing can be compared without it.</p></div>;
   }
   return (
     <>
-      <p className="eyebrow">{running ? "Current step" : "Final decision"}</p>
+      <p className="eyebrow">{heading}</p>
       <p className="decision-action">{ACTION_LABEL[latest.action] ?? latest.action}</p>
       <p>{latest.rationale}</p>
       {latest.uncertainty && <p className="notice warn"><strong>Uncertainty:</strong> {latest.uncertainty}</p>}
@@ -155,6 +158,7 @@ export function StudyPage({ id }: { id: string }) {
   const repro = (experiments.find((e) => e.repro.evaluator_sha256)?.repro ?? {}) as Record<string, unknown>;
   const candidates = experiments.filter((e) => e.kind === "candidate" && e.validation.compared);
   const invalid = candidates.filter((e) => e.state === "INVALID").length;
+  const selectedRun = experiments.find((e) => e.id === selected);
 
   return (
     <div className={`study ${selected ? "with-drawer" : ""}`}>
@@ -177,6 +181,7 @@ export function StudyPage({ id }: { id: string }) {
           <button className="btn ghost" onClick={() => exportReport("copy")}>{copied ? "Copied" : "Copy report"}</button>
         </div>
         {running && <p className="dim">Pause lets the run in flight finish; Stop cancels it (local runs are killed, external cancellation would be best effort).</p>}
+        {study.failure_reason && <p className="notice bad" role="alert"><strong>Study failed:</strong> {study.failure_reason}</p>}
         {actionError && (
           <div className="notice bad" role="alert">{actionError.message}
             {actionError.blockers.length > 0 && <ul>{actionError.blockers.map((x) => <li key={x}>{x}</li>)}</ul>}</div>
@@ -216,7 +221,7 @@ export function StudyPage({ id }: { id: string }) {
         <div className="stack">
           <section className="panel accent" aria-labelledby="why-h">
             <h2 id="why-h">Why Möbius did this</h2>
-            <DecisionPanel decisions={decisions} running={running} onSelect={setSelected} />
+            <DecisionPanel decisions={decisions} state={study.state} onSelect={setSelected} />
           </section>
           <section className="panel" aria-labelledby="bud-h">
             <h2 id="bud-h">Budget</h2>
@@ -241,7 +246,10 @@ export function StudyPage({ id }: { id: string }) {
         </dl>
       </section>
 
-      {selected && <EvidenceDrawer experimentId={selected} onClose={() => setSelected(null)} onSelect={setSelected} />}
+      {selected && (
+        <EvidenceDrawer experimentId={selected} version={`${selectedRun?.state}:${selectedRun?.verdict}:${decisions.length}`}
+                        onClose={() => setSelected(null)} onSelect={setSelected} />
+      )}
     </div>
   );
 }

@@ -117,6 +117,7 @@ export interface Study {
   best_valid: Experiment | null;
   promoted: Experiment | null;
   latest_decision: Decision | null;
+  failure_reason: string | null;
 }
 
 export interface Template {

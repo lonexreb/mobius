@@ -263,16 +263,16 @@ def decide(state: dict[str, Any]) -> Action:
                               f"{remaining} trial(s) unspent.", tuple(e["id"] for e in valid),
                       uncertainty="Futility heuristic, not a value-of-information estimate.")
 
+    audit_base = next((e for e in baselines("audit") if e["state"] == "VALID"), None)
+    audit_base_failed = len([e for e in baselines("audit") if finished(e)]) >= MAX_BASELINE_ATTEMPTS
+    audit_cost = 1 if audit_base else 2   # candidate on audit split (+ audit-split baseline once)
     pending_rep = [e for e in latest.values() if e["verdict"] == "request_replicate"]
-    if pending_rep and remaining >= 1:
+    if pending_rep and remaining - (audit_cost if contenders else 0) >= 1:  # never spend an existing contender's audit
         e = max(pending_rep, key=_speedup)
         return Action("replicate", f"Re-run ({label(e['config'])}) to see whether {_fmt(_speedup(e))} holds.", (e["id"],),
                       config=e["config"], parent_id=e["id"],
                       hypothesis=f"The gain measured in {e['id']} reproduces on an independent run.")
 
-    audit_base = next((e for e in baselines("audit") if e["state"] == "VALID"), None)
-    audit_base_failed = len([e for e in baselines("audit") if finished(e)]) >= MAX_BASELINE_ATTEMPTS
-    audit_cost = 1 if audit_base else 2   # candidate on audit split (+ audit-split baseline once)
     if remaining - audit_cost >= 1:       # always hold back enough budget to audit before promoting
         nxt = _neighbour_proposal(state, tried)
         if nxt:

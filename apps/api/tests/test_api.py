@@ -211,7 +211,8 @@ def test_events_are_monotonic_and_replayable(make_client):
     ids = [e["id"] for e in ev]
     assert ids == sorted(ids) and len(set(ids)) == len(ids)
     types = [e["type"] for e in ev]
-    assert types[0] == "study.created" and "experiment.validated" in types and types[-1] == "study.completed"
+    assert types[0] == "study.created" and "experiment.validated" in types
+    assert types[-2:] == ["study.completed", "research.decision"]   # state closes first, then the decision is logged
     tail = client.get(f"{V1}/studies/{s['id']}/events.json", params={"after_event_id": ids[3]}).json()
     assert [e["id"] for e in tail] == ids[4:]
 
@@ -417,3 +418,131 @@ def test_only_valid_dev_results_reach_rust_history_exactly_once(make_client):
     next_id = orch.bridge.tell(s["id"], "tpe", told[0]["config"], 1.0)
     assert next_id == f"tell-{len(told) + 1:04d}"
     assert any("TPE" in d["rationale"] for d in led.decisions(s["id"]))
+
+
+# ---------- regressions from review ----------
+
+def test_second_instance_on_same_ledger_is_refused_and_cannot_cancel_live_runs(tmp_path):
+    from mobius_lab.main import create_app
+    first = create_app(db_path=tmp_path / "lab.sqlite", var_dir=tmp_path / "var", run_inline=True)
+    led = first.state.ledger
+    study = led.create_study(goal="g", template_id="t", mode="local", policy_arm="random", max_trials=3,
+                             approved_spend_usd=0.0, max_wall_seconds=600, frozen_eval_hash="h")
+    led.set_study_state(study["id"], "RUNNING")
+    live = _reserve(led, led.study(study["id"]))
+    led.transition(live["id"], "RUNNING")
+    with pytest.raises(RuntimeError, match="already owns"):
+        create_app(db_path=tmp_path / "lab.sqlite", var_dir=tmp_path / "var")
+    assert led.experiment(live["id"])["state"] == "RUNNING" and led.study(study["id"])["state"] == "RUNNING"
+    first.state.lock_file.close()
+
+
+def test_failed_and_timed_out_runs_are_charged_wall_time(make_client):
+    import time as _time
+    adapter = FixtureAdapter(default={"status": "timeout", "error": "slow"})
+    adapter.script[("null", "dev")] = [{}]
+    client, _ = make_client(adapter)
+    orig = adapter.evaluate
+
+    def slow(exp, *a):
+        if exp["config"] is not None:
+            _time.sleep(0.6)
+        return orig(exp, *a)
+
+    adapter.evaluate = slow
+    study = new_study(client, arm="metric_greedy", trials=8, budget={"max_wall_seconds": 60})
+    led = client.app.state.ledger
+    led.conn.execute("UPDATE studies SET max_wall_seconds=2 WHERE id=?", (study["id"],))
+    s = run(client, study["id"])
+    exps = client.get(f"{V1}/studies/{s['id']}/experiments").json()
+    timed_out = [e for e in exps if e["state"] == "TIMED_OUT"]
+    assert timed_out and all(e["wall_seconds"] >= 0.5 for e in timed_out)
+    assert len(exps) < 8 and "wall-time" in s["latest_decision"]["rationale"]
+
+
+def test_replicate_does_not_spend_an_existing_contenders_audit_budget():
+    from test_policy import C88, exp, state
+    from mobius_lab.policies import decide
+    contender = exp(1, C44, verdict="keep", speedup=1.2, ci_low=1.1)
+    unsure = exp(2, C88, verdict="request_replicate", speedup=1.05, ci_low=0.98)
+    a = decide(state([exp(0), contender, unsure], max_trials=5))   # 2 left = audit baseline + audit
+    assert a.kind == "run_baseline" and a.split == "audit"
+    assert decide(state([exp(0), contender, unsure], max_trials=6)).kind == "replicate"
+
+
+def test_best_valid_excludes_gains_the_controller_rejected_after_replication(make_client):
+    adapter = FixtureAdapter(script={(K44, "dev"): [{"speedup": 1.10, "ci_low": 0.98}, {"speedup": 0.90}]},
+                             default={"speedup": 0.95})
+    client, _ = make_client(adapter)
+    s = run(client, new_study(client, trials=4)["id"])
+    exps = client.get(f"{V1}/studies/{s['id']}/experiments").json()
+    runs44 = [e for e in exps if e["config"] == C44]
+    assert [e["verdict"] for e in runs44] == ["flag_investigate", "flag_investigate"]   # verdict covers both runs
+    assert s["best_valid"] is None and s["promoted"] is None
+
+
+def test_pause_during_terminal_decision_cannot_double_promote(make_client):
+    from mobius_lab import policies as pol
+    adapter = FixtureAdapter(default={"speedup": 1.3})
+    client, _ = make_client(adapter)
+    study = new_study(client, arm="metric_greedy", trials=3)
+    led, real = client.app.state.ledger, pol.decide
+
+    def pausing(state):
+        action = real(state)
+        if action.kind == "promote" and led.study(study["id"])["state"] == "RUNNING":
+            led.set_study_state(study["id"], "PAUSED")       # operator pause lands mid-decision
+        return action
+
+    pol.decide = pausing
+    try:
+        paused = run(client, study["id"])
+    finally:
+        pol.decide = real
+    assert paused["state"] == "PAUSED" and paused["promoted"] is None
+    done = client.post(f"{V1}/studies/{study['id']}/resume").json()
+    exps = client.get(f"{V1}/studies/{study['id']}/experiments").json()
+    assert done["state"] == "COMPLETED" and [e["verdict"] for e in exps].count("promoted") == 1
+
+
+def test_malformed_import_is_recorded_failed_and_does_not_wedge_the_study(client):
+    s = new_study(client, mode="autolab")
+    bad = make_artifact(None)
+    bad["engine"] = "llama"                                   # wrong type
+    r = client.post(f"{V1}/import/autolab", json=payload(s["id"], artifact=bad))
+    assert r.status_code == 200 and r.json()["experiment"]["state"] in ("INVALID", "FAILED")
+    ok = client.post(f"{V1}/import/autolab", json=payload(s["id"], "alab-run-2"))
+    assert ok.json()["experiment"]["state"] == "VALID"
+    no_domains = make_artifact(C44, speedup=1.4)
+    del no_domains["metrics"]["speedup_by_domain"]
+    cand = client.post(f"{V1}/import/autolab", json=payload(s["id"], "alab-run-3", kind="candidate", config=C44,
+                                                            artifact=no_domains)).json()["experiment"]
+    assert cand["state"] == "INVALID" and "metrics_complete_and_finite" in cand["validation"]["gates_failed"]
+    assert all(e["state"] != "RUNNING" for e in client.get(f"{V1}/studies/{s['id']}/experiments").json())
+
+
+def test_import_requires_approval_of_a_nonzero_cap(client):
+    s = new_study(client, mode="autolab", budget={"approved_spend_usd": 50})
+    assert client.post(f"{V1}/import/autolab", json=payload(s["id"], cost_usd=40.0)).status_code == 409
+    assert client.get(f"{V1}/studies/{s['id']}").json()["budget"]["observed_spend_usd"] == 0
+
+
+@needs_mobius
+def test_failed_tell_never_breaks_recording_and_is_retried(make_client):
+    from mobius_lab.adapters import BridgeError
+    client, _ = make_client(FixtureAdapter(default={"speedup": 0.95}))
+    orch = client.app.state.orchestrator
+    real, calls = orch.bridge.tell, []
+
+    def flaky(*a):
+        calls.append(a)
+        if len(calls) == 1:
+            raise BridgeError("mobius tell timed out")
+        return real(*a)
+
+    orch.bridge.tell = flaky
+    s = run(client, new_study(client, arm="tpe", trials=4)["id"])
+    exps = client.app.state.ledger.experiments(s["id"])
+    cands = [e for e in exps if e["kind"] == "candidate"]
+    assert s["state"] == "COMPLETED" and s["budget"]["reserved_usd"] == 0
+    assert sum(e["rust_told"] for e in cands) >= len(cands) - 1 and cands[0]["rust_told"] == 1   # first one retried

@@ -106,6 +106,7 @@ class StudyOut(BaseModel):
     best_valid: ExperimentOut | None
     promoted: ExperimentOut | None
     latest_decision: DecisionOut | None
+    failure_reason: str | None = None
 
 
 class AutolabImport(Strict):

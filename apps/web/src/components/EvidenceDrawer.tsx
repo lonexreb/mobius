@@ -4,22 +4,28 @@ import { ACTION_LABEL, configLabel, duration, EVIDENCE, num, runStatus, speedup,
 
 interface Props {
   experimentId: string;
+  /** Changes whenever the run's state or verdict changes, so open evidence never goes stale. */
+  version: string;
   onClose: () => void;
   onSelect: (id: string) => void;
 }
 
 const short = (s: unknown, n = 12) => (typeof s === "string" && s ? `${s.slice(0, n)}…` : "not available");
 
-export function EvidenceDrawer({ experimentId, onClose, onSelect }: Props) {
+export function EvidenceDrawer({ experimentId, version, onClose, onSelect }: Props) {
   const [exp, setExp] = useState<ExperimentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setExp(null);
-    setError(null);
-    api.experiment(experimentId).then(setExp).catch((e) => setError(e.message));
   }, [experimentId]);
+  useEffect(() => {
+    let stale = false;
+    setError(null);
+    api.experiment(experimentId).then((e) => !stale && setExp(e)).catch((e) => !stale && setError(e.message));
+    return () => { stale = true; };
+  }, [experimentId, version]);
 
   useEffect(() => {
     closeRef.current?.focus();
