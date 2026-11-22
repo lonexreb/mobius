@@ -62,6 +62,11 @@ def grid(space: dict[str, list]) -> list[dict]:
     return out
 
 
+def label(config: dict | None) -> str:
+    """Human-readable config, e.g. 'lookahead_tokens=4, draft_p_min=0.75'."""
+    return "target-only" if config is None else ", ".join(f"{k}={config[k]}" for k in sorted(config, reverse=True))
+
+
 def _speedup(e: dict) -> float | None:
     return e["metrics"].get("speedup_vs_target")
 
@@ -84,7 +89,7 @@ def _neighbour_proposal(state: dict, tried: set[str]) -> Action | None:
     if not cands:
         cfg = state["fixed_spec"] if key(state["fixed_spec"]) not in tried else untried[0]
         return Action("propose_new", "Start from the pre-registered fixed configuration.", config=cfg,
-                      hypothesis=f"The pre-registered config {cfg} decodes faster than target-only while "
+                      hypothesis=f"The pre-registered config ({label(cfg)}) decodes faster than target-only while "
                                  "reproducing its tokens exactly.")
     valid = [e for e in cands if e["state"] == "VALID"]
     anchor = max(valid, key=_speedup) if valid else cands[-1]
@@ -108,7 +113,7 @@ def _random_proposal(state: dict, tried: set[str]) -> Action | None:
     random.Random(f"{state['seed']}:{state['study_id']}").shuffle(order)
     cfg = next((c for c in order if key(c) not in tried), None)
     return cfg and Action("propose_new", "Seeded uniform sample from the pinned search space.", config=cfg,
-                          hypothesis=f"Control arm: random config {cfg}.")
+                          hypothesis=f"Control arm: random config ({label(cfg)}).")
 
 
 def _fixed_proposal(state: dict, tried: set[str]) -> Action | None:
@@ -116,7 +121,7 @@ def _fixed_proposal(state: dict, tried: set[str]) -> Action | None:
     if key(cfg) in tried:
         return None
     return Action("propose_new", "Pre-registered fixed speculative config (control arm).", config=cfg,
-                  hypothesis=f"The fixed config {cfg} is faster than target-only and lossless.")
+                  hypothesis=f"The fixed config ({label(cfg)}) is faster than target-only and lossless.")
 
 
 def _tpe_proposal(state: dict, tried: set[str]) -> Action | None:
@@ -126,9 +131,9 @@ def _tpe_proposal(state: dict, tried: set[str]) -> Action | None:
     cfg, why = state["tpe_ask"]()
     note = f"Möbius Rust TPE: {why}"
     if key(cfg) in tried or cfg not in grid(state["search_space"]):
-        note += f" It suggested {cfg}, already evaluated or outside the grid; substituted the next untried config."
+        note += f" It suggested {label(cfg)}, already evaluated or outside the grid; substituted the next untried config."
         cfg = untried[0]
-    return Action("propose_new", note, config=cfg, hypothesis=f"TPE arm: config {cfg} suggested from validated history.")
+    return Action("propose_new", note, config=cfg, hypothesis=f"TPE arm: config ({label(cfg)}) suggested from validated history.")
 
 
 PROPOSERS: dict[str, Callable[[dict, set[str]], Action | None]] = {
@@ -235,7 +240,7 @@ def decide(state: dict[str, Any]) -> Action:
     if passed:
         best = max(passed, key=_speedup)
         dev = latest[key(best["config"])]
-        return Action("promote", f"Config {best['config']} is valid, gained on dev ({_fmt(_speedup(dev))}) and "
+        return Action("promote", f"Config ({label(best['config'])}) is valid, gained on dev ({_fmt(_speedup(dev))}) and "
                                  f"survived the independent audit ({_fmt(_speedup(best))}).", (dev["id"], best["id"]),
                       best["id"], uncertainty="Pilot-sized prompt sets; sealed split not evaluated. Not a "
                                               "statistical significance claim.")
@@ -261,7 +266,7 @@ def decide(state: dict[str, Any]) -> Action:
     pending_rep = [e for e in latest.values() if e["verdict"] == "request_replicate"]
     if pending_rep and remaining >= 1:
         e = max(pending_rep, key=_speedup)
-        return Action("replicate", f"Re-run {e['config']} to see whether {_fmt(_speedup(e))} holds.", (e["id"],),
+        return Action("replicate", f"Re-run ({label(e['config'])}) to see whether {_fmt(_speedup(e))} holds.", (e["id"],),
                       config=e["config"], parent_id=e["id"],
                       hypothesis=f"The gain measured in {e['id']} reproduces on an independent run.")
 
@@ -279,7 +284,7 @@ def decide(state: dict[str, Any]) -> Action:
                                           f"split so {best['id']} can be audited.", (best["id"],), split="audit",
                           hypothesis="Target-only reference tokens for the independent audit split.")
         worst_domain, worst = min(best["metrics"]["speedup_by_domain"].items(), key=lambda kv: kv[1])
-        return Action("audit", f"Before promoting {best['config']} ({_fmt(_speedup(best))} on dev, weakest domain "
+        return Action("audit", f"Before promoting {label(best['config'])} ({_fmt(_speedup(best))} on dev, weakest domain "
                                f"{worst_domain} at {_fmt(worst)}), check it on the independent longer-prompt split.",
                       (best["id"],), config=best["config"], split="audit", parent_id=best["id"],
                       hypothesis=f"The dev gain of {best['id']} generalises to longer prompts in all domains.")

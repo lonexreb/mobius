@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .persistence import Ledger
+from .policies import label
 
 EVIDENCE_LABELS = {
     "local": "LOCAL: measured on this machine with llama.cpp. Not comparable to the Qwen3-8B / EAGLE-3 CUDA flagship.",
@@ -62,12 +63,14 @@ def markdown(ledger: Ledger, study: dict) -> str:
     ]
     if promoted:
         m = promoted["metrics"]
-        lines.append(f"Promoted `{promoted['config']}` ({promoted['id']}): speedup {_n(m.get('speedup_vs_target'))}x "
+        lines.append(f"Promoted `{label(promoted['config'])}` ({promoted['id']}): speedup {_n(m.get('speedup_vs_target'))}x "
                      f"on `{promoted['split']}`, 95% CI [{_n(m.get('speedup_ci_low'))}, {_n(m.get('speedup_ci_high'))}].")
     else:
         lines.append("**No candidate was promoted.**")
     if final:
-        lines += ["", f"Final decision: **{final['action'].upper()}**. {final['rationale']}"]
+        done = study["state"] in ("COMPLETED", "CANCELLED")
+        lines += ["", f"{'Final' if done else 'Latest (study not finished)'} decision: "
+                      f"**{final['action'].upper()}**. {final['rationale']}"]
         if final["uncertainty"]:
             lines.append(f"Uncertainty: {final['uncertainty']}")
     lines += ["", "## Experiments", "",
@@ -79,7 +82,7 @@ def markdown(ledger: Ledger, study: dict) -> str:
                  if m.get("speedup_vs_target") is not None else "n/a")
         match = f"{v.get('compared', 0) - v.get('truncated_prefix', 0) - v.get('diverged', 0)}/{v['compared']}" \
             if v.get("compared") else "n/a"
-        lines.append(f"| {e['seq']} | {e['id']} | {e['action']} | {e['split']} | `{e['config'] or 'target-only'}` | "
+        lines.append(f"| {e['seq']} | {e['id']} | {e['action']} | {e['split']} | `{label(e['config'])}` | "
                      f"{e['state']} | {e['verdict'] or '-'} | {speed} | {match} | "
                      f"{_n(m.get('throughput_tokens_per_sec'), '{:.1f}')} | {e['evidence_class'].upper()} |")
     lines += ["", "## Decision trace", ""]
