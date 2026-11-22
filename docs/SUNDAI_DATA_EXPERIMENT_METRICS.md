@@ -1,3 +1,5 @@
+> **Superseded for frontier research (2026-11-22):** The UCI Online Shoppers task and scikit-learn digits experiments in this document are retained **only as smoke tests** for data ingestion, deterministic splits, and metrics. The approved frontier experimental research program is [MOBIUS_FRONTIER_RESEARCH_NOV_2026.md](MOBIUS_FRONTIER_RESEARCH_NOV_2026.md). Do not run UCI shopping as the Sundai flagship or cite digits smoke tests as evidence of autonomous ML research.
+
 # Sundai: Data, Hypothesis, Experiment, and Metrics Contract
 
 **Target project:** lonexreb/mobius • **Date:** 2026-11-22  
