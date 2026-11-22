@@ -1,0 +1,6 @@
+spec_version: 2
+name: mobius-brief
+version: 0.1.0
+metrics:
+  - {name: paired_speedup, direction: max}
+watchdog_timeout_s: 30

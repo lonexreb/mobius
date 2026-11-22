@@ -1,0 +1,19 @@
+{
+  "evidence_class": "FIXTURE",
+  "source": "Egbe official offline session helper",
+  "included_sessions": 2,
+  "internal": 1,
+  "exclusion_reasons": {
+    "source:smoke": 1
+  },
+  "events": {
+    "cta_click": {
+      "unique_sessions": 2,
+      "raw_events": 2
+    },
+    "activated": {
+      "unique_sessions": 1,
+      "raw_events": 1
+    }
+  }
+}

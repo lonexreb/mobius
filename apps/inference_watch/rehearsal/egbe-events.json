@@ -1,0 +1,108 @@
+{
+  "format": "egbe-umami-events.v1",
+  "evidence_class": "FIXTURE: all three sessions are synthetic",
+  "website": {
+    "id": "rehearsal",
+    "name": "offline rehearsal",
+    "domain": "brief.invalid"
+  },
+  "window": {
+    "startAt": 1795377600000,
+    "endAt": 1795377659999
+  },
+  "analysis_options": {
+    "act_event": [
+      "activated"
+    ],
+    "act_start_event": [
+      "cta_click"
+    ],
+    "act_path": [],
+    "internal_sources": [
+      "smoke"
+    ],
+    "internal_country": [],
+    "dc_country": [],
+    "max_journey_events": 100
+  },
+  "coverage": {
+    "base_events": "complete fixture",
+    "event_data": "fixture"
+  },
+  "rows": [
+    {
+      "id": "fixture-a-0",
+      "sessionId": "fixture-a",
+      "createdAt": "2026-11-22T20:00:00Z",
+      "eventType": 1,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=rehearsal",
+      "referrerDomain": "",
+      "device": "desktop"
+    },
+    {
+      "id": "fixture-a-1",
+      "sessionId": "fixture-a",
+      "createdAt": "2026-11-22T20:00:01Z",
+      "eventType": 2,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=rehearsal",
+      "referrerDomain": "",
+      "device": "desktop",
+      "eventName": "cta_click"
+    },
+    {
+      "id": "fixture-a-2",
+      "sessionId": "fixture-a",
+      "createdAt": "2026-11-22T20:00:02Z",
+      "eventType": 2,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=rehearsal",
+      "referrerDomain": "",
+      "device": "desktop",
+      "eventName": "activated"
+    },
+    {
+      "id": "fixture-b-0",
+      "sessionId": "fixture-b",
+      "createdAt": "2026-11-22T20:00:00Z",
+      "eventType": 1,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=rehearsal",
+      "referrerDomain": "",
+      "device": "desktop"
+    },
+    {
+      "id": "fixture-b-1",
+      "sessionId": "fixture-b",
+      "createdAt": "2026-11-22T20:00:01Z",
+      "eventType": 2,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=rehearsal",
+      "referrerDomain": "",
+      "device": "desktop",
+      "eventName": "cta_click"
+    },
+    {
+      "id": "fixture-internal-0",
+      "sessionId": "fixture-internal",
+      "createdAt": "2026-11-22T20:00:00Z",
+      "eventType": 1,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=smoke",
+      "referrerDomain": "",
+      "device": "desktop"
+    },
+    {
+      "id": "fixture-internal-1",
+      "sessionId": "fixture-internal",
+      "createdAt": "2026-11-22T20:00:01Z",
+      "eventType": 2,
+      "urlPath": "/brief",
+      "urlQuery": "utm_source=smoke",
+      "referrerDomain": "",
+      "device": "desktop",
+      "eventName": "activated"
+    }
+  ]
+}

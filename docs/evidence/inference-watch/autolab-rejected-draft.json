@@ -1,0 +1,55 @@
+{
+  "hill": "mobius-brief",
+  "tree_hash": "1c19fb7655711dbe1b8c590ab474b74b65563152",
+  "commit": "e8d85f43651d48fff1e0e5189d4ce86e1ccc178b",
+  "submission_hash": "sha256:fda697dc4f982e39ccdc316a8ab0386506457273c1423057d0c8dbf59687f9e0",
+  "submission_git": "hack/sundai-inference-watch@a4f73a3+dirty",
+  "passed": false,
+  "config": [
+    {
+      "name": "workload",
+      "value": "code",
+      "primary": true
+    }
+  ],
+  "metrics": [],
+  "details": {
+    "evidence": "recorded local pilot",
+    "records": [
+      {
+        "artifact_sha256": "b94db647e1cec6de7653ec973f5bf710f0a2d0cb331e1555094c0b7617ac334b",
+        "evaluator_sha256": "b309f811af832a5efac97a709edef2449b3873d1706e839cb27c6ac0ef9862d0",
+        "matched": 1,
+        "prompts": 8,
+        "ratio": 0.732818,
+        "run": "run_9fee8ebda7",
+        "split_sha256": "0484c036ac8f33ccd14133c9893ae114c54e652647d4d6dc903e3e3418cddf17",
+        "study": "study_3919d763ab"
+      },
+      {
+        "artifact_sha256": "57e079c52337cfdf22986ba9a24855100f0768ebb12d8fb632a09c8d8ff8402a",
+        "evaluator_sha256": "b309f811af832a5efac97a709edef2449b3873d1706e839cb27c6ac0ef9862d0",
+        "matched": 1,
+        "prompts": 8,
+        "ratio": 0.748158,
+        "run": "run_c1cad73cf4",
+        "split_sha256": "0484c036ac8f33ccd14133c9893ae114c54e652647d4d6dc903e3e3418cddf17",
+        "study": "study_68dddde577"
+      }
+    ],
+    "minimum_paired_ratio": 0.732818,
+    "reason": "token mismatch"
+  },
+  "params": {},
+  "final": false,
+  "official": true,
+  "official_reason": null,
+  "hill_spec_version": 2,
+  "tool": {
+    "version": "0.12.1+autolab.2",
+    "sha256": "5b6eae7ed8f92a1f0cdbcbc9e280121099ee509abb451399d86761f79641b249"
+  },
+  "timestamp": "2026-11-22T23:34:58Z",
+  "report_version": 1,
+  "signature": "hmac-sha256:445f77fbecefaea2c16f542effac609c15f8c6e7fd3e8a0af5eb0a4400264da2"
+}

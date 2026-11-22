@@ -1,0 +1,40 @@
+{
+  "hill": "mobius-brief",
+  "tree_hash": "1c19fb7655711dbe1b8c590ab474b74b65563152",
+  "commit": "e8d85f43651d48fff1e0e5189d4ce86e1ccc178b",
+  "submission_hash": "sha256:31c73ebd9d9e6c026959f3c04cf4693b54be8aec406a47a7c73ed64ee0c92e66",
+  "submission_git": "hack/sundai-inference-watch@a4f73a3+dirty",
+  "passed": true,
+  "config": [
+    {
+      "name": "workload",
+      "value": "code",
+      "primary": true
+    }
+  ],
+  "metrics": [
+    {
+      "name": "paired_speedup",
+      "value": 1.0,
+      "direction": "max"
+    }
+  ],
+  "details": {
+    "evidence": "recorded local pilot",
+    "records": [],
+    "minimum_paired_ratio": 1.0,
+    "reason": "exact target reference"
+  },
+  "params": {},
+  "final": false,
+  "official": true,
+  "official_reason": null,
+  "hill_spec_version": 2,
+  "tool": {
+    "version": "0.12.1+autolab.2",
+    "sha256": "5b6eae7ed8f92a1f0cdbcbc9e280121099ee509abb451399d86761f79641b249"
+  },
+  "timestamp": "2026-11-22T23:34:58Z",
+  "report_version": 1,
+  "signature": "hmac-sha256:2c27ec5fc02a39324c35b273261257ba957d901861e656a5f6a28d77cbdf3469"
+}
