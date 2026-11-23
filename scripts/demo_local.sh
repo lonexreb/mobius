@@ -14,7 +14,7 @@ cd "$ROOT"
 cd "$ROOT/apps/api"
 [ -d .venv ] || uv venv --python 3.12 .venv
 uv pip install -q -p .venv -e ".[dev]"
-.venv/bin/uvicorn mobius_lab.main:app --host 127.0.0.1 --port 8000 --log-level warning &
+.venv/bin/uvicorn mobius_lab.main:app --host 127.0.0.1 --port 8000 --log-level warning --timeout-graceful-shutdown 3 &
 API_PID=$!
 trap 'kill $API_PID 2>/dev/null || true' EXIT
 

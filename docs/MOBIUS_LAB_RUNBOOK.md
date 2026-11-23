@@ -24,7 +24,7 @@ cd apps/api && uv venv --python 3.12 .venv && uv pip install -p .venv -e ".[dev]
 cd apps/web && npm install
 
 # terminal 1: API on 127.0.0.1:8000
-cd apps/api && .venv/bin/uvicorn mobius_lab.main:app --host 127.0.0.1 --port 8000
+cd apps/api && .venv/bin/uvicorn mobius_lab.main:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 3
 
 # terminal 2: UI on http://127.0.0.1:5173
 cd apps/web && npm run dev
@@ -169,6 +169,7 @@ account and Hill, and a real Autolab metrics payload to map. Each is itemised in
 ## Known limitations
 
 - No authentication. The API must stay on 127.0.0.1.
+- Stopping the API while a browser tab is open can hang on the open event stream; the shutdown timeout flag above bounds that to 3 seconds. Without it, the old process keeps the ledger lock and a new one refuses to start.
 - One API process per ledger: a second instance refuses to start (`var/lab.lock`). Running `demo_local.sh` twice fails on purpose.
 - An imported Autolab run with `cost_usd: null` is recorded with an unknown-cost event rather than refused, including on a $0 study. It is visible in the budget panel but is not blocked.
 - Double-run protection relies on one study loop per process plus the single-process lock; there is no distributed guard.
