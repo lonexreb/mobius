@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Inference Watch · Möbius</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #182b21;
+        --muted: #506256;
+        --edge: #ccd4c8;
+        --paper: #f4f5ed;
+        --accent: #d8fa76;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        font:
+          16px/1.55 "Instrument Sans",
+          "Helvetica Neue",
+          sans-serif;
+        background: var(--paper);
+      }
+      header {
+        background: #182b21;
+        color: #fff;
+      }
+      nav,
+      main {
+        max-width: 990px;
+        margin: auto;
+      }
+      nav {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 18px 28px;
+      }
+      nav a {
+        color: #d9e4d8;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      nav a:first-child {
+        margin-right: auto;
+        color: white;
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .mark {
+        color: var(--accent);
+        font-size: 27px;
+        vertical-align: -2px;
+        margin-right: 6px;
+      }
+      main {
+        padding: 46px 28px 72px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0 0 12px;
+      }
+      h1 {
+        font-family: "Instrument Serif", Georgia, serif;
+        font-weight: 500;
+        font-size: clamp(38px, 6.6vw, 70px);
+        line-height: 1.02;
+        letter-spacing: -0.05em;
+        max-width: 770px;
+        margin: 10px 0 20px;
+      }
+      h2 {
+        font:
+          500 30px/1.15 Georgia,
+          serif;
+        letter-spacing: -0.035em;
+      }
+      h3 {
+        font-size: 18px;
+      }
+      .meta,
+      small,
+      th {
+        font:
+          12px/1.5 ui-monospace,
+          monospace;
+        color: var(--muted);
+      }
+      .meta {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .lede {
+        font-size: 19px;
+        max-width: 67ch;
+        color: var(--muted);
+      }
+      .section {
+        border-top: 1px solid var(--edge);
+        padding-top: 24px;
+        margin-top: 28px;
+      }
+      .panel {
+        padding: 24px;
+        border: 1px solid var(--edge);
+        background: #fff;
+        border-radius: 9px;
+        margin: 20px 0;
+      }
+      .choice {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 16px 0 22px;
+      }
+      .choice label {
+        border: 1px solid #a9b8ab;
+        border-radius: 6px;
+        padding: 8px 20px;
+        cursor: pointer;
+      }
+      .choice label:has(:checked) {
+        background: #e3eccf;
+        border-color: #607738;
+      }
+      input {
+        accent-color: var(--ink);
+      }
+      button,
+      .action {
+        background: var(--ink);
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 12px 18px;
+        font: 600 15px/1.3 inherit;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      a {
+        color: #31573a;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 3px solid #7c9228;
+        outline-offset: 3px;
+      }
+      .heroresult {
+        background: var(--ink);
+        color: white;
+        padding: 22px;
+        border-radius: 9px;
+      }
+      .heroresult .meta {
+        color: var(--accent);
+      }
+      .heroresult h2 {
+        margin: 8px 0;
+      }
+      .table {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+      }
+      td,
+      th {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--edge);
+        white-space: nowrap;
+      }
+      td:first-child,
+      th:first-child {
+        padding-left: 0;
+      }
+      th {
+        text-transform: uppercase;
+        letter-spacing: 0.035em;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .actions button {
+        background: #e3e9dc;
+        color: var(--ink);
+      }
+      .numbers {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border-top: 1px solid var(--edge);
+        border-bottom: 1px solid var(--edge);
+        padding: 18px 0;
+        margin: 24px 0;
+      }
+      .numbers strong {
+        font:
+          42px Georgia,
+          serif;
+        display: block;
+      }
+      .numbers small {
+        display: block;
+      }
+      .error {
+        color: #902f21;
+      }
+      pre {
+        white-space: pre-wrap;
+        font-size: 13px;
+      }
+      summary {
+        cursor: pointer;
+      }
+      footer {
+        margin-top: 32px;
+      }
+      .linkline {
+        margin-top: 15px;
+        font-size: 14px;
+      }
+      @media (max-width: 560px) {
+        nav,
+        main {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .panel {
+          padding: 16px;
+        }
+        nav {
+          gap: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/"><span class="mark">∞</span> Möbius</a
+        ><a href="/">Inference Watch</a><a href="/loop">Business loop</a>
+      </nav>
+    </header>
+    <main id="app"></main>
+    <script>
+      const app = document.querySelector("#app");
+      const api = async (path, body) => {
+        const res = await fetch(
+          path,
+          body === undefined
+            ? {}
+            : {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              },
+        );
+        if (!res.ok)
+          throw new Error((await res.json()).detail || "Request failed");
+        return res.json();
+      };
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const domains = { code: "Code", math: "Math", chat: "Chat" };
+      const metric = (n, label) =>
+        "<div><strong>" + n + "</strong><small>" + label + "</small></div>";
+      function fail(e) {
+        const p = document.createElement("p");
+        p.className = "error";
+        p.setAttribute("role", "alert");
+        p.textContent = e.message;
+        app.prepend(p);
+      }
+      function home() {
+        app.innerHTML =
+          '<p class="meta">Apple Silicon · Inference Watch</p><h1>Should you turn on draft decoding?</h1><p class="lede">Get a recommendation for your workload from two recorded runs on an M4 Max. See the speed difference and whether the draft reproduced the target’s output.</p><form class="panel"><h2>Choose your workload</h2><div class="choice">' +
+          Object.entries(domains)
+            .map(
+              ([k, v]) =>
+                '<label><input type="radio" name="workload" value="' +
+                k +
+                '" ' +
+                (k === "code" ? "checked" : "") +
+                "> " +
+                v +
+                "</label>",
+            )
+            .join("") +
+          '</div><button>Get my benchmark brief →</button></form><div class="section"><h3>Tested environment</h3><p>Qwen2.5 7B target · 1.5B draft · llama.cpp build 7480 · Metal · 64 GB</p><small>Eight development prompts per workload, repeated in both runs. Measured November 22, 2026.</small></div>';
+        const id = crypto.randomUUID();
+        app.querySelector("form").onsubmit = async (e) => {
+          e.preventDefault();
+          const button = e.target.querySelector("button");
+          button.disabled = true;
+          try {
+            await api("/api/requests", {
+              id,
+              workload: new FormData(e.target).get("workload"),
+            });
+            location.assign("/?receipt=" + id);
+          } catch (err) {
+            button.disabled = false;
+            fail(err);
+          }
+        };
+      }
+      const settings = {
+        "d2-p50": "2 tokens · 50%",
+        "d4-p50": "4 tokens · 50%",
+        "d4-p75": "4 tokens · 75%",
+      };
+      function evidence(records, extended) {
+        const rows = Object.entries(records);
+        return (
+          '<div class="section"><h2>' +
+          (extended ? "Both recordings, side by side" : "Benchmark evidence") +
+          "</h2><p>" +
+          (extended
+            ? "Compare each run with its own target-only control."
+            : "Paired speed is the lower of the two recorded ratios. Target-only is 1.000×.") +
+          '</p><div class="table"><table><thead><tr><th>Lookahead · min. probability</th>' +
+          (extended
+            ? "<th>Run 1 speed</th><th>Run 2 speed</th><th>Run 1 exact</th><th>Run 2 exact</th>"
+            : "<th>Paired speed</th><th>Exact outputs (runs 1 / 2)</th>") +
+          "</tr></thead><tbody>" +
+          rows
+            .map(
+              ([k, rs]) =>
+                "<tr><td>" +
+                esc(settings[k] || k) +
+                "</td>" +
+                (extended
+                  ? rs
+                      .map(
+                        (r) => "<td>" + Number(r.ratio).toFixed(3) + "×</td>",
+                      )
+                      .join("") +
+                    rs
+                      .map(
+                        (r) => "<td>" + r.matched + "/" + r.prompts + "</td>",
+                      )
+                      .join("")
+                  : "<td>" +
+                    Math.min(...rs.map((r) => r.ratio)).toFixed(3) +
+                    "×</td><td>" +
+                    rs.map((r) => r.matched + " of " + r.prompts).join(" / ") +
+                    "</td>") +
+                "</tr>",
+            )
+            .join("") +
+          "</tbody></table></div></div>"
+        );
+      }
+      async function receipt(id) {
+        const path = "/api/requests/" + encodeURIComponent(id),
+          r = await api(path);
+        if (!r.brief) {
+          app.innerHTML =
+            "<h1>Your brief is queued.</h1><p>This receipt will still work if you close the tab.</p>";
+          setTimeout(() => receipt(id).catch(fail), 700);
+          return;
+        }
+        const title =
+          /Recorded pilot choice: ([\w-]+)/.exec(r.brief)?.[1] ||
+          "See recorded brief";
+        app.innerHTML =
+          '<p class="meta">Inference Watch · ' +
+          esc(domains[r.workload]) +
+          ' workload</p><h1>Your inference brief.</h1><div class="heroresult"><span class="meta">Recorded pilot recommendation</span><h2>' +
+          esc(title === "target-only" ? "Keep target-only decoding" : title) +
+          "</h2><p>Every qualifying draft must reproduce all eight outputs in both runs and beat the reference speed.</p></div>" +
+          (r.records ? evidence(r.records, r.variant === "comparison") : "") +
+          '<p class="linkline">M4 Max · Qwen2.5 7B / 1.5B · November 22, 2026</p><details><summary>Inspect the original brief and run IDs</summary><pre>' +
+          esc(r.brief) +
+          "</pre></details>" +
+          (r.workload === "code"
+            ? '<p class="linkline">Autolab pilot reports · <a href="/evidence/reference">Target reference</a> · <a href="/evidence/rejected-draft">Rejected draft</a></p>'
+            : "") +
+          '<div class="panel"><h2>What will you run?</h2><div id="reply"></div></div><footer><a href="/">Request another brief</a> · <a href="/loop">See the business loop</a></footer>';
+        await api(path + "/view", {});
+        const reply = document.getElementById("reply");
+        const choices = {
+          "target-only": "Target only",
+          draft: "Draft decoding",
+          undecided: "Still undecided",
+        };
+        const saved = (k) => {
+          reply.textContent = "Decision recorded: " + choices[k] + ".";
+        };
+        if (r.choice) {
+          saved(r.choice);
+          return;
+        }
+        reply.innerHTML =
+          '<div class="actions">' +
+          Object.entries(choices)
+            .map(
+              ([k, v]) => '<button data-choice="' + k + '">' + v + "</button>",
+            )
+            .join("") +
+          "</div>";
+        reply.onclick = async (e) => {
+          const k = e.target.dataset.choice;
+          if (!k) return;
+          try {
+            await api(path + "/feedback", { choice: k });
+            saved(k);
+          } catch (err) {
+            fail(err);
+          }
+        };
+      }
+      async function loop() {
+        const r = await api("/api/loop"),
+          groups = r.groups,
+          sum = (k) => groups.reduce((n, g) => n + g[k], 0);
+        app.innerHTML =
+          '<p class="meta">Local demo · Receipt-level observations</p><h1>The business loop.</h1><p class="lede">If two summary briefs for the same workload leave readers undecided, the next three requests get a side-by-side comparison. Then delivery returns to the summary.</p><div class="numbers">' +
+          metric(sum("ready"), "Briefs ready") +
+          metric(sum("opened"), "Briefs opened") +
+          metric(sum("decided"), "Decisions reported") +
+          "</div><h2>What changes next</h2>" +
+          Object.entries(domains)
+            .map(([k, v]) => {
+              const s = groups.find(
+                  (g) => g.workload === k && g.variant === "summary",
+                ),
+                c = groups.find(
+                  (g) => g.workload === k && g.variant === "comparison",
+                );
+              const active = r.trials.some((t) => t.workload === k);
+              return (
+                '<div class="panel"><h3>' +
+                v +
+                "</h3>" +
+                (active
+                  ? (c?.requested || 0) < 3
+                    ? "Next receipt gets both run speeds. " +
+                      (c?.requested || 0) +
+                      " of 3 comparison briefs assigned."
+                    : "Three comparison briefs assigned. Summary resumed."
+                  : "Next receipt gets the summary. " +
+                    (s?.undecided || 0) +
+                    " of 2 undecided responses observed.") +
+                "<br><small>Explicit decisions / opened · Summary " +
+                (s?.decided || 0) +
+                "/" +
+                (s?.opened || 0) +
+                " · Comparison " +
+                (c?.decided || 0) +
+                "/" +
+                (c?.opened || 0) +
+                "</small></div>"
+              );
+            })
+            .join("") +
+          '<small>Each receipt counts once. Rehearsal feedback demonstrates the rule; it does not establish customer demand or causal lift.</small><footer><button id="refresh">Refresh observations</button> <button id="egbe">Run Egbe review</button><p id="egbe-result" role="status"></p> <a href="/api/egbe-snapshot">Egbe offline event snapshot</a></footer>';
+        document.querySelector("#egbe").onclick = async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          try {
+            const s = await api("/api/egbe-report");
+            document.querySelector("#egbe-result").textContent =
+              "Egbe counted " +
+              s.requests +
+              " requesting receipts and " +
+              s.activations +
+              " opened briefs in this local demo.";
+          } catch (err) {
+            fail(err);
+          } finally {
+            btn.disabled = false;
+          }
+        };
+        document.querySelector("#refresh").onclick = () => loop().catch(fail);
+      }
+      const id = new URLSearchParams(location.search).get("receipt");
+      if (location.pathname === "/loop") loop().catch(fail);
+      else if (id) receipt(id).catch(fail);
+      else home();
+    </script>
+  </body>
+</html>

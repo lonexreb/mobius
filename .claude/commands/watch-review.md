@@ -1,0 +1,5 @@
+Read the two aggregate local rehearsal reports from http://127.0.0.1:8766/api/loop and http://127.0.0.1:8766/api/egbe-report. If the demo is offline, say so. Report counts per workload and presentation, with numerator and denominator. Explain the rule that selected the most recent trial, how many comparison slots have been used, and what the next receipt will receive. Record unanswered feedback as unknown. These are local receipts; several can come from one person.
+
+If the owner has separately connected Claude Code to the named Egbe business and requested live product analytics, use the plugin's read-only analytics capability for the registered reader site. Identify local and hosted results by source and time window. A project telemetry receipt is evidence of session logging only. Do not send local receipts to Egbe, change account settings, enroll session logging, contact readers or create a recurring review from this command.
+
+Finish with one recommendation and the next observation that would change it. Reserve claims about business impact for real customer cohorts.
