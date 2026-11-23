@@ -6,7 +6,7 @@ Möbius Lab is a local web app: you give it an ML optimization objective and a b
 controller proposes experiments, a fixed evaluator scores them, and the controller promotes, replicates,
 audits, rejects, investigates or stops, with every decision and its evidence stored in a SQLite ledger.
 
-Everything below was run on 2026-11-22 on an Apple M4 Max (64 GB), macOS 26.2. Spend: **$0**.
+Local runs were on an Apple M4 Max (64 GB), macOS 26.2, at $0. The flagship ran on a rented Modal A100 for about $0.90 billed, under an owner-approved $25 cap. All on 2026-11-22.
 
 ## Start it
 
@@ -114,7 +114,7 @@ Re-served the four recorded runs in about a second, labelled REPLAY, and reached
 
 - On this engine and model pair, speculative decoding was **slower** than target-only and **not lossless**. Most mismatches are outputs that stop a few tokens short of the 96-token limit with an identical prefix; a minority diverge mid-sequence. The in-run target-only control reproduced the stored reference tokens in every run, so the gate itself is trustworthy.
 - This is a result about llama.cpp build 7480 with a Qwen2.5-1.5B draft on Apple Metal. It says **nothing** about Qwen3-8B with EAGLE-3 on vLLM/CUDA, which has not been run.
-- It does **not** show that one policy is better than another. Two studies, one machine, pilot-sized prompt sets: no significance is claimed.
+- (Local studies) It does **not** show that one policy is better than another. Two studies, one machine, pilot-sized prompt sets: no significance is claimed.
 - No candidate passed validity, so the replicate, audit and promote paths were not exercised on real data. They are covered by tests with fixture data only (`apps/api/tests/`), which is labelled FIXTURE and cannot be replayed as evidence.
 
 ## How the pieces fit
@@ -147,23 +147,64 @@ Starting twice, or importing the same external run twice, creates one run and on
 Restart behaviour: studies, results and decisions persist. A run that was in flight is cancelled (no
 measurement recorded, reservation released) and its study is paused; press Resume.
 
-## Flagship (Qwen3-8B + EAGLE-3): prepared, not run
+## Flagship (Qwen3-8B + EAGLE-3 on vLLM): run on Modal, 2026-11-22
 
-**Modal path (added after the owner approved a $25 cap): wired, not yet run.** `integrations/modal/bench_app.py` runs
-the same evaluator inside an A100 80 GB container with vLLM; the API has a `modal` mode whose adapter reserves an
-upper-bound cost per run (about $1.28) against the study cap, records an estimated cost for every run including
-failures, and stops scheduling when the cap would be exceeded. Covered by tests with a fixture standing in for the
-remote call. **Blocked:** the Modal workspace on this machine is paused, so the weight download, the vLLM probe and
-every GPU run were refused; $0 spent. `VllmEngine.complete` is deliberately unfinished until the probe shows how this
-vLLM build returns generated token IDs. The paragraphs below describe the state before Modal was chosen.
+Owner-approved cap: **$25**. Setup: `Qwen/Qwen3-8B@b968826d` with `RedHatAI/Qwen3-8B-speculator.eagle3@08610ffa`,
+vLLM 0.34.0, one NVIDIA A100-SXM4-80GB on Modal (workspace `reach2shubhankar`), thinking disabled, greedy,
+96 output tokens, same 24 dev prompts and the same paired, interleaved evaluator as the local runs. Both servers fit on
+one card together (67.5 GB used).
 
-Ready: pinned model revisions (`manifest.json` → `flagship`), the prompt registry and splits, the correctness
-and scoring code, the ledger contract, and the ingestion endpoint `POST /api/v1/import/autolab`
-(`AutolabImport` in `schemas.py`: source run ID, Hill hash, verdict, cost, evaluator artifact; idempotent).
+### Study `study_a3c5488e4c`: `evidence_aware`, 8-run budget
 
-Missing, and why: a CUDA GPU and vLLM (none here, $0 authorized), a `VllmEngine` in the evaluator (not written
-because its serve flags and token-ID output could not be verified without an installation), the Autolab CLI,
-account and Hill, and a real Autolab metrics payload to map. Each is itemised in
+| Run | Config | Speedup (95% CI) | By domain (chat / code / math) | Prompts identical to stored baseline | Draft acceptance | Verdict |
+|-----|--------|------------------|--------------------------------|--------------------------------------|------------------|---------|
+| baseline | target-only | reference, 92.2 tok/s | n/a | reference | n/a | valid reference |
+| 1 | 3 speculative tokens | 2.122× [2.018, 2.224] | 2.03 / 2.06 / 2.28 | 14 / 24 | 47% | invalid, rejected |
+| 2 | 2 speculative tokens | 2.030× [1.947, 2.088] | 1.98 / 2.01 / 2.10 | 14 / 24 | 58% | invalid, rejected |
+| 3 | 4 speculative tokens | 2.159× [2.038, 2.272] | 2.14 / 2.06 / 2.28 | 18 / 24 | 38% | invalid, rejected |
+
+Final decision: **INVESTIGATE** after 4 of 8 runs (12.1 minutes of run time). Nothing was promoted.
+
+### Reading it honestly
+
+- **The speed is real and large:** about 2.0 to 2.2× decode throughput in every domain, with tight within-run intervals.
+- **Lossless equivalence was not established**, so the controller refused to promote it. Two gates failed on every candidate.
+- **The baseline itself is not bit-stable.** From the stored token IDs (no extra spend): the in-run target-only control
+  differed from the stored target-only baseline on 4 of 24 prompts, diverging at token 28 to 84. The three controls were
+  identical to each other. So two target-only passes on the same GPU did not agree exactly.
+- **Speculation disagrees more than that.** Against its own interleaved control, the speculative output differed on
+  9, 9 and 7 of 24 prompts, spread across all three domains.
+- **What this does not show:** whether speculation changes outputs beyond the target's own run-to-run noise. 4/24 versus
+  7 to 9/24 on one pilot is suggestive, not conclusive. It also says nothing about output *quality*; only exact identity
+  was tested. No statistical significance is claimed.
+- **Next experiment the evidence asks for:** replicate the target-only baseline several times to measure its
+  self-mismatch rate, compare candidates against the in-run control rather than a stored baseline, and only then decide
+  whether "lossless" should mean bit-exact or within the target's own noise floor. That is a change to the frozen
+  evaluator, so it must be a new study.
+
+### Cost
+
+| | Amount | Source |
+|---|--------|--------|
+| Ledger estimate for the 4 runs | $0.79 | (call seconds + 60 s idle window) × $0.000817/s, deliberately high |
+| Modal billed, all `mobius-lab-bench` apps | $0.90 | `modal billing report --for today`, read right after the study; may still settle upward slightly |
+
+The billed figure also covers the weight download, a crashed first attempt and the 5-minute vLLM probe. Total is
+under 4% of the cap. After the study one GPU container was still listed a few minutes later; it was stopped by hand
+(`modal container stop`). Check `modal container list` after any run.
+
+### How to run it again
+
+```bash
+modal profile activate reach2shubhankar
+modal run integrations/modal/bench_app.py::download      # CPU, once
+modal deploy integrations/modal/bench_app.py             # deployed app: survives the laptop sleeping
+```
+
+Then in the UI: template "Qwen3-8B + EAGLE-3", mode "Modal GPU (paid)", set a cap, create, approve the cap, start.
+A temporary `modal run` app is stopped by Modal when the laptop sleeps or drops network; that killed two early attempts.
+
+Still not done: Autolab (CLI, Hill, real payload mapping) and the sealed split. See
 [MOBIUS_LAB_CODEX_REQUESTS.md](MOBIUS_LAB_CODEX_REQUESTS.md).
 
 ## Known limitations
