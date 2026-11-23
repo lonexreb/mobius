@@ -421,8 +421,61 @@ class VllmEngine:
                 "messages": [{"role": "system", "content": gen["system_prompt"]}, {"role": "user", "content": prompt}],
                 "chat_template_kwargs": self.flagship["chat_template_kwargs"]}
 
+    def _spec_counters(self) -> tuple[float, float]:
+        """Cumulative (drafted, accepted) token counters from /metrics (names verified on vLLM 0.34.0)."""
+        drafted = accepted = 0.0
+        for line in self.metrics_text(True).splitlines():
+            if line.startswith("vllm:spec_decode_num_draft_tokens_total"):
+                drafted += float(line.rsplit(" ", 1)[1])
+            elif line.startswith("vllm:spec_decode_num_accepted_tokens_total"):
+                accepted += float(line.rsplit(" ", 1)[1])
+        return drafted, accepted
+
     def complete(self, prompt: str, speculative: bool) -> dict:
-        raise EvalError("VllmEngine.complete is not finalised: run probe first")
+        """Streamed chat completion with `return_token_ids` (verified on vLLM 0.34.0).
+
+        vLLM reports no decode timing, so throughput is client-side inside the same container:
+        tokens after the first token-bearing chunk / time between the first and last such chunk.
+        Speculative chunks carry several tokens each; the definition is identical for both arms.
+        """
+        before = self._spec_counters() if speculative else None
+        body = {**self._body(prompt), "stream": True, "return_token_ids": True,
+                "stream_options": {"include_usage": True}}
+        tokens: list[int] = []
+        t_first = t_last = usage = finish = None
+        first_n = 0
+        t0 = time.monotonic()
+        with self._request(speculative, body) as resp:
+            for line in resp:
+                if not line.startswith(b"data: ") or b"[DONE]" in line:
+                    continue
+                chunk, now = json.loads(line[6:]), time.monotonic()
+                usage = chunk.get("usage") or usage
+                for choice in chunk.get("choices") or []:
+                    finish = choice.get("finish_reason") or finish
+                    ids = choice.get("token_ids") or []
+                    if ids:
+                        if t_first is None:
+                            t_first, first_n = now, len(ids)
+                        t_last = now
+                        tokens += ids
+        if not tokens or usage is None:
+            raise EvalError("vLLM stream returned no token IDs or no usage record")
+        if usage.get("completion_tokens") != len(tokens):
+            raise EvalError(f"token-ID stream incomplete: {len(tokens)} ids vs {usage.get('completion_tokens')} generated")
+        span = t_last - t_first
+        tps = (len(tokens) - first_n) / span if span > 0 and len(tokens) > first_n else len(tokens) / (t_last - t0)
+        after = self._spec_counters() if speculative else None
+        return {
+            "token_ids": tokens,
+            "decode_tps": tps,
+            "output_tokens": len(tokens),
+            "prompt_tokens": usage["prompt_tokens"],
+            "ttft_ms": (t_first - t0) * 1000,
+            "stop_type": finish,
+            "draft_n": int(after[0] - before[0]) if speculative else None,
+            "draft_n_accepted": int(after[1] - before[1]) if speculative else None,
+        }
 
     def metrics_text(self, speculative: bool) -> str:
         with urllib.request.urlopen(f"http://127.0.0.1:{self.PORTS[speculative]}/metrics", timeout=10) as r:

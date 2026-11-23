@@ -14,7 +14,10 @@ from pathlib import Path
 
 import modal
 
-SPEC_DIR = Path(__file__).resolve().parents[2] / "experiments" / "frontier2026" / "speculative"
+_HERE = Path(__file__).resolve()
+# On the dev machine this file lives in the repo; inside the container it is /root/bench_app.py
+# and the evaluator directory is already mounted at /spec.
+SPEC_DIR = (_HERE.parents[2] / "experiments" / "frontier2026" / "speculative") if len(_HERE.parents) > 2 else Path("/spec")
 GPU = "A100-80GB"
 MODELS = "/models"
 
