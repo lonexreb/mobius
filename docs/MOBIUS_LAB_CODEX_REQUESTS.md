@@ -18,7 +18,7 @@ Last updated: 2026-11-22. Nothing on this list has been provisioned.
 
 | # | Dependency | Priority | Resolver | Blocks |
 |---|------------|----------|----------|--------|
-| 1 | CUDA GPU for Qwen3-8B + EAGLE-3 | P0 | Owner (paid) | The flagship benchmark |
+| 1 | CUDA GPU for Qwen3-8B + EAGLE-3 (Modal, $25 cap approved; workspace paused) | P0 | Owner (un-pause) | The flagship benchmark |
 | 2 | vLLM with speculators support on that GPU | P0 | Codex, after #1 | The flagship benchmark |
 | 3 | Autolab CLI install + login | P1 | Owner (login) | Autolab mode, Hill scoring |
 | 4 | Autolab Hill for the fixed evaluator | P1 | Codex, after #3 | Externally scored runs |
@@ -31,6 +31,14 @@ Last updated: 2026-11-22. Nothing on this list has been provisioned.
 ---
 
 ## 1. CUDA GPU for the flagship benchmark (P0)
+
+> **Update 2026-11-22:** the owner chose **Modal** and approved a **$25 hard cap**. The Modal CLI is installed and
+> logged in on the dev machine, but every command is refused with `Workspace ... is paused`, so nothing has run and
+> nothing has been spent. **Owner action:** un-pause the workspace in the Modal dashboard (billing/settings), and
+> ideally set a workspace spend limit of $25 there as a second guard. Then:
+> `modal run integrations/modal/bench_app.py::download` (CPU), `...::probe` (GPU, a few minutes), `modal deploy integrations/modal/bench_app.py`.
+> Pricing read from https://modal.com/pricing on 2026-11-22: A100 80 GB $0.000694/s (about $2.50/h), CPU $0.0000131/core/s,
+> memory $0.00000222/GiB/s; Starter plan lists $30/month free credits (not verified for this workspace).
 
 - **Provider:** any Linux + NVIDIA CUDA machine. Options to price: an Autolab compute node, Hugging Face Jobs, or a rented GPU.
 - **Purpose:** run `Qwen/Qwen3-8B` target-only and with `RedHatAI/Qwen3-8B-speculator.eagle3` on matched hardware. This is the only way to produce the headline result. The local llama.cpp runs are a different model, draft and engine and say nothing about it.

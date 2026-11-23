@@ -46,7 +46,7 @@ git-ignored. Delete the directory to reset.
 | `cargo fmt --all -- --check` | clean (before and after) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | clean (before and after) |
 | `cargo test --workspace` | 161 passed, 0 failed (bench 4, claw 74, cli 25, core 24, mcp 30 + 4 e2e) |
-| `cd apps/api && .venv/bin/pytest -q` | 85 passed (71 API/policy/budget/import/replay/bridge + 14 evaluator) |
+| `cd apps/api && .venv/bin/pytest -q` | 89 passed (75 API/policy/budget/import/replay/bridge/modal + 14 evaluator) |
 | `cd apps/web && npm run build` | type-check + build OK, 79.6 kB gzipped JS |
 | `cd apps/web && npx vitest run` | 4 passed |
 
@@ -148,6 +148,14 @@ Restart behaviour: studies, results and decisions persist. A run that was in fli
 measurement recorded, reservation released) and its study is paused; press Resume.
 
 ## Flagship (Qwen3-8B + EAGLE-3): prepared, not run
+
+**Modal path (added after the owner approved a $25 cap): wired, not yet run.** `integrations/modal/bench_app.py` runs
+the same evaluator inside an A100 80 GB container with vLLM; the API has a `modal` mode whose adapter reserves an
+upper-bound cost per run (about $1.28) against the study cap, records an estimated cost for every run including
+failures, and stops scheduling when the cap would be exceeded. Covered by tests with a fixture standing in for the
+remote call. **Blocked:** the Modal workspace on this machine is paused, so the weight download, the vLLM probe and
+every GPU run were refused; $0 spent. `VllmEngine.complete` is deliberately unfinished until the probe shows how this
+vLLM build returns generated token IDs. The paragraphs below describe the state before Modal was chosen.
 
 Ready: pinned model revisions (`manifest.json` → `flagship`), the prompt registry and splits, the correctness
 and scoring code, the ledger contract, and the ingestion endpoint `POST /api/v1/import/autolab`

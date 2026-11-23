@@ -17,6 +17,7 @@ const ARMS: Record<string, string> = {
 };
 const MODES: { id: Mode; title: string; note: string }[] = [
   { id: "local", title: "Local validation", note: "Real measurements on this machine. $0." },
+  { id: "modal", title: "Modal GPU (paid)", note: "Qwen3-8B + EAGLE-3 on a rented A100. Needs a cap." },
   { id: "autolab", title: "Autolab project", note: "Externally scored runs. Not connected." },
   { id: "replay", title: "Replay recorded runs", note: "Re-serve a finished study. Nothing re-measured." },
 ];
@@ -43,7 +44,9 @@ export function GoalComposer({ studies, connections, onCreated }: Props) {
   const replayable = studies.filter((s) => s.mode !== "replay" && s.budget.trials_used > 0);
   const flagship = templateId === "qwen3_speculative_ood";
   const blocker =
-    flagship && mode !== "autolab" ? "The Qwen3-8B flagship needs CUDA + vLLM. It can only be drafted as an Autolab study."
+    flagship && mode === "local" ? "The Qwen3-8B flagship needs CUDA + vLLM: choose Modal GPU (paid) or Autolab."
+    : mode === "modal" && !flagship ? "Modal GPU mode runs the Qwen3-8B flagship template only."
+    : mode === "modal" && spend <= 0 ? "Modal is paid compute: set a spend cap above $0."
     : mode === "local" && connections && !connections.local.ready ? `Local evaluator unavailable: ${connections.local.blocker}`
     : mode === "replay" && !replayOf ? "Choose a finished study to replay."
     : arm === "tpe" && connections && !connections.mobius_cli.ready ? `TPE arm unavailable: ${connections.mobius_cli.blocker}`
@@ -148,6 +151,7 @@ export function GoalComposer({ studies, connections, onCreated }: Props) {
         <code>{mode}</code> mode, spending at most ${spend.toFixed(2)}.{" "}
         {mode === "autolab" && "Creates a draft only: remote dispatch stays blocked until Autolab and a GPU are connected and the budget is approved."}
         {mode === "local" && "Runs llama.cpp on this machine for a few minutes."}
+        {mode === "modal" && `Creates a draft. Each run reserves up to $${template?.estimated_max_usd_per_run?.toFixed(2) ?? "?"} against the cap; you approve the cap, then start.`}
         {mode === "replay" && "Re-serves recorded artifacts; the controller decides again."}
       </p>
 

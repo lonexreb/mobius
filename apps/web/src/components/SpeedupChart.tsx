@@ -78,7 +78,8 @@ export function SpeedupChart({ experiments, onSelect }: Props) {
                   : <path d={`M${cx - 5} ${cy - 5}l10 10M${cx + 5} ${cy - 5}l-10 10`} className="mark-invalid" />}
                 <text x={cx} y={H - PAD.bottom + 16} textAnchor="middle" className="tick">#{e.seq}{e.split === "audit" ? " audit" : ""}</text>
                 <text x={cx} y={H - PAD.bottom + 30} textAnchor="middle" className="tick dim">
-                  L{e.config?.lookahead_tokens} p{e.config?.draft_p_min}
+                  {e.config && "num_speculative_tokens" in e.config ? `k=${e.config.num_speculative_tokens}`
+                    : `L${e.config?.lookahead_tokens} p${e.config?.draft_p_min}`}
                 </text>
               </g>
             );

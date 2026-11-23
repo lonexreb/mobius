@@ -1,6 +1,6 @@
 // Typed client for the Möbius Lab API (v1). Mirrors apps/api/src/mobius_lab/schemas.py.
 
-export type Mode = "local" | "autolab" | "replay";
+export type Mode = "local" | "modal" | "autolab" | "replay";
 export type EvidenceClass = "local" | "observed" | "replay" | "fixture";
 
 export interface Budget {
@@ -131,6 +131,8 @@ export interface Template {
   primary_metric: string;
   validity: string;
   search_space: Record<string, number[]>;
+  estimated_max_usd_per_run?: number;
+  pricing_source?: string;
   sources: { domain: string; repo: string; revision: string; license: string; selected: number; url: string }[];
   splits: Record<string, { sha256: string; count: number; role: string }>;
 }

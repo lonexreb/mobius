@@ -53,6 +53,7 @@ class FixtureAdapter:
     """Scripted outcomes keyed by (config, split); each key may list several results for replicates."""
 
     evidence_class = "fixture"
+    estimated_cost_usd = 0.0
 
     def __init__(self, script=None, default=None, evidence_class="fixture"):
         self.script = {k: list(v) for k, v in (script or {}).items()}
@@ -75,6 +76,13 @@ class FixtureAdapter:
 
     def cancel(self):
         pass
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Tests never contact Modal."""
+    monkeypatch.setattr(adapters, "modal_readiness",
+                        lambda manifest: {"ready": False, "blocker": "not checked in tests"})
 
 
 @pytest.fixture

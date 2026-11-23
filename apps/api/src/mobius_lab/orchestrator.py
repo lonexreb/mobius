@@ -5,6 +5,7 @@ Metrics only ever enter the ledger through `validate`, from an evaluator artifac
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import subprocess
@@ -14,7 +15,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import policies
-from .adapters import REPO, BridgeError, ExecutionAdapter, LocalAdapter, MobiusBridge, ReplayAdapter, RunResult
+from .adapters import (REPO, BridgeError, ExecutionAdapter, LocalAdapter, MobiusBridge, ModalAdapter,
+                       ReplayAdapter, RunResult)
 from .persistence import BudgetExceeded, DuplicateRun, InvalidTransition, Ledger
 
 log = logging.getLogger("mobius_lab")
@@ -107,10 +109,16 @@ class Orchestrator:
     def _default_adapter(self, study: dict) -> ExecutionAdapter:
         if study["mode"] == "replay":
             return ReplayAdapter(self.ledger, study["replay_of"], study["id"])
+        if study["mode"] == "modal":
+            return ModalAdapter(self.manifest)
         return LocalAdapter()
 
+    @staticmethod
+    def engine_for(study: dict) -> str:
+        """The template fixes the engine, and with it the search space."""
+        return "vllm" if study["template_id"] == "qwen3_speculative_ood" else "llama"
+
     def split_hashes(self) -> dict[str, str]:
-        import json
         registry = json.loads(self.ev.REGISTRY_PATH.read_text())
         return {name: meta["sha256"] for name, meta in registry["splits"].items() if name in self.ev.ONLINE_SPLITS}
 
@@ -140,10 +148,11 @@ class Orchestrator:
         exps = self.ledger.experiments(study["id"])
         return {
             "study_id": study["id"], "arm": study["policy_arm"], "max_trials": study["max_trials"],
-            "seed": self.manifest["generation"]["seed"], "search_space": self.manifest["search_space"],
-            "fixed_spec": self.manifest["fixed_spec"], "experiments": exps,
+            "seed": self.manifest["generation"]["seed"], "search_space": self.ev.space_for(self.engine_for(study)),
+            "fixed_spec": self.ev.fixed_spec_for(self.engine_for(study)), "experiments": exps,
             "dev_candidates": [e for e in exps if e["kind"] == "candidate" and e["split"] == "dev"],
-            "tpe_ask": lambda: self.bridge.ask(study["id"], study["policy_arm"]),
+            "tpe_ask": lambda: self.bridge.ask(study["id"], study["policy_arm"],
+                                               self.ev.space_for(self.engine_for(study))),
         }
 
     def _decide(self, sid: str, action: policies.Action, experiment_id: str | None) -> None:
@@ -201,7 +210,7 @@ class Orchestrator:
                         study, kind="baseline" if action.kind == "run_baseline" else "candidate", action=action.kind,
                         config=action.config, split=action.split, hypothesis=action.hypothesis,
                         rationale=action.rationale, parent_id=action.parent_id,
-                        evidence_class=adapter.evidence_class, estimated_cost_usd=0.0)
+                        evidence_class=adapter.evidence_class, estimated_cost_usd=adapter.estimated_cost_usd)
                 except BudgetExceeded as exc:
                     if self._complete(sid, "budget"):
                         self._decide(sid, policies.Action("stop", f"Budget gate refused the next run: {exc}."), None)
@@ -245,7 +254,12 @@ class Orchestrator:
             result = RunResult("failed", error=f"adapter error: {type(exc).__name__}: {exc}")
         if self.ledger.study(sid)["state"] == "CANCELLED" and result.status != "ok":
             result = RunResult("cancelled", error="cancelled by operator")
-        self.record_result(study, exp, result, out_path, elapsed=time.monotonic() - started)
+        if result.source:
+            with self.ledger.lock:
+                self.ledger.conn.execute("UPDATE experiments SET source=? WHERE id=?",
+                                         (json.dumps(result.source), eid))
+        self.record_result(study, exp, result, out_path, actual_cost=result.cost, cost_source=result.cost_source,
+                           elapsed=time.monotonic() - started)
 
     def record_result(self, study: dict, exp: dict, result: RunResult, out_path: Path | None,
                       actual_cost: dict[str, float | None] | None = None, cost_source: str | None = None,

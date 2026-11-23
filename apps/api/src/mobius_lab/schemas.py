@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Mode = Literal["local", "autolab", "replay"]
+Mode = Literal["local", "modal", "autolab", "replay"]
 Arm = Literal["target_only", "fixed_spec", "random", "tpe", "metric_greedy", "evidence_aware"]
 Split = Literal["dev", "audit"]  # "sealed" is deliberately not representable in this API
 EvidenceClass = Literal["local", "observed", "replay", "fixture"]

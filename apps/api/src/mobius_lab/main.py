@@ -72,6 +72,12 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
         blockers = []
         if study["approved_spend_usd"] > 0 and not study["budget_approved"]:
             blockers.append("non-zero spend cap has not been explicitly approved")
+        if study["mode"] == "modal" and orch.adapter_factory == orch._default_adapter:
+            if not conn["gpu"]["ready"]:
+                blockers.append(f"modal: {conn['gpu']['blocker']}")
+            est = adapters.ModalAdapter(ev.MANIFEST).estimated_cost_usd
+            if est > study["approved_spend_usd"]:
+                blockers.append(f"one run reserves up to ${est:.2f}, above the ${study['approved_spend_usd']:.2f} cap")
         if study["mode"] == "autolab":
             blockers += [f"autolab: {conn['autolab']['blocker']}", f"gpu: {conn['gpu']['blocker']}",
                          "remote dispatch is not implemented; import scored runs via POST /api/v1/import/autolab"]
@@ -104,10 +110,13 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
              "search_space": m["search_space"], "fixed_spec": m["fixed_spec"], "generation": m["generation"],
              "sources": sources, "splits": splits},
             {"id": "qwen3_speculative_ood", "title": "Qwen3-8B + EAGLE-3 speculative decoding (flagship)",
-             "runnable_modes": [], "label": m["flagship"]["status"], "target_model": m["flagship"]["target_model"],
+             "runnable_modes": ["modal", "replay"], "label": m["flagship"]["status"],
+             "target_model": m["flagship"]["target_model"],
              "draft_model": m["flagship"]["speculator"], "engine": m["flagship"]["engine"],
              "primary_metric": "speedup_vs_target at matched hardware", "validity": "exact token-ID match",
-             "search_space": m["flagship"]["search_space_unverified"], "sources": sources, "splits": splits},
+             "search_space": m["flagship"]["search_space"], "fixed_spec": m["flagship"]["fixed_spec"],
+             "estimated_max_usd_per_run": adapters.ModalAdapter(m).estimated_cost_usd,
+             "pricing_source": m["flagship"]["modal"]["pricing_source"], "sources": sources, "splits": splits},
         ], "policy_arms": list(policies.ARMS)}
 
     @api.get("/connections")
@@ -116,9 +125,14 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
 
     @api.post("/studies", response_model=StudyOut, status_code=201)
     def create_study(body: StudyCreate) -> dict:
-        if body.template_id == "qwen3_speculative_ood" and body.mode != "autolab":
-            raise HTTPException(422, "the Qwen3-8B flagship needs CUDA + vLLM; only mode=autolab can host it. "
+        flagship = body.template_id == "qwen3_speculative_ood"
+        if flagship and body.mode == "local":
+            raise HTTPException(422, "the Qwen3-8B flagship needs CUDA + vLLM: use mode=modal (paid) or autolab. "
                                      "Use template local_speculative_qwen25 for local validation.")
+        if body.mode == "modal" and not flagship:
+            raise HTTPException(422, "mode=modal runs the qwen3_speculative_ood template only")
+        if body.mode == "modal" and body.budget.approved_spend_usd <= 0:
+            raise HTTPException(422, "mode=modal is paid compute: set a spend cap above $0")
         frozen = ev.evaluator_sha256()
         if body.mode == "replay":
             src = ledger.study(body.replay_of or "")
@@ -264,7 +278,7 @@ def create_app(db_path: str | Path | None = None, var_dir: str | Path | None = N
             raise HTTPException(422, "a scored run must include the evaluator artifact")
         if body.kind == "candidate":
             try:
-                ev.validate_config(body.config)
+                ev.validate_config(body.config, orch.engine_for(study))
             except ev.EvalError as exc:
                 raise HTTPException(422, f"config rejected by pinned allowlist: {exc}") from exc
         elif body.config is not None:

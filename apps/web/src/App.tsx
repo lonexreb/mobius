@@ -6,7 +6,7 @@ import { speedup, usd } from "./format";
 
 const CONNECTION_LABELS: [keyof Connections, string][] = [
   ["local", "Local evaluator"], ["mobius_cli", "Möbius Rust optimizer"], ["autolab", "Autolab"],
-  ["gpu", "CUDA GPU"], ["llm_proposer", "LLM proposer"], ["egbe", "Egbe"],
+  ["gpu", "Modal GPU (A100)"], ["llm_proposer", "LLM proposer"], ["egbe", "Egbe"],
 ];
 
 // The study id lives in the URL hash so a study view can be linked and reloaded.
@@ -43,7 +43,7 @@ export function App() {
         <p className="nav-status">
           <span className={`led ${connections?.local.ready ? "on" : "off"}`} aria-hidden="true" />
           Compute: {connections ? (connections.local.ready ? "local only" : "unavailable") : "checking…"}
-          <span className="sep">·</span>GPU: not connected
+          <span className="sep">·</span>GPU: {connections?.gpu.ready ? "Modal ready" : "not connected"}
           {current && <><span className="sep">·</span><span className="mono">{usd(current.budget.observed_spend_usd)} / {usd(current.budget.approved_spend_usd)}</span></>}
         </p>
       </header>

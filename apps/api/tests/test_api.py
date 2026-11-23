@@ -29,7 +29,9 @@ def test_health_reports_real_version_and_evaluator_hash(client):
 def test_templates_expose_pinned_sources_and_flagship_status(client):
     t = client.get(f"{V1}/templates").json()["templates"]
     assert all(len(s["revision"]) == 40 for s in t[0]["sources"])
-    assert "NOT RUN" in t[1]["label"] and t[1]["runnable_modes"] == []
+    assert t[1]["runnable_modes"] == ["modal", "replay"] and "paid" in t[1]["label"]
+    assert t[1]["search_space"] == {"num_speculative_tokens": [2, 3, 4, 5, 7]}
+    assert 0 < t[1]["estimated_max_usd_per_run"] < 5 and "modal.com/pricing" in t[1]["pricing_source"]
 
 
 def test_connections_never_claim_unverified_services(client):
@@ -546,3 +548,75 @@ def test_failed_tell_never_breaks_recording_and_is_retried(make_client):
     cands = [e for e in exps if e["kind"] == "candidate"]
     assert s["state"] == "COMPLETED" and s["budget"]["reserved_usd"] == 0
     assert sum(e["rust_told"] for e in cands) >= len(cands) - 1 and cands[0]["rust_told"] == 1   # first one retried
+
+
+# ---------- paid Modal mode (no network: the remote call is a fixture) ----------
+
+class PaidFixture(FixtureAdapter):
+    """Stands in for the Modal adapter: reserves an estimate, reports a cost and a source per run."""
+
+    evidence_class = "observed"
+    estimated_cost_usd = 1.0
+
+    def evaluate(self, exp, reference_path, out_path, timeout):
+        from dataclasses import replace
+        result = super().evaluate(exp, reference_path, out_path, timeout)
+        return replace(result, cost={"rented_gpu_compute": 0.6}, cost_source="estimate: fixture",
+                       source={"provider": "modal", "call_id": f"fc-{len(self.calls)}", "gpu": "A100-80GB"})
+
+
+def flagship(client, cap=25.0, trials=8, arm="evidence_aware"):
+    body = {"template_id": "qwen3_speculative_ood", "goal": "Improve Qwen3-8B throughput, keep outputs identical",
+            "mode": "modal", "policy_arm": arm, "budget": {"max_trials": trials, "approved_spend_usd": cap}}
+    r = client.post(f"{V1}/studies", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_modal_mode_rules_at_creation(client):
+    base = {"goal": "Improve throughput", "policy_arm": "evidence_aware"}
+    zero = client.post(f"{V1}/studies", json={**base, "template_id": "qwen3_speculative_ood", "mode": "modal"})
+    assert zero.status_code == 422 and "cap" in zero.text                      # paid mode needs a cap above $0
+    wrong = client.post(f"{V1}/studies", json={**base, "template_id": "local_speculative_qwen25", "mode": "modal",
+                                               "budget": {"approved_spend_usd": 5}})
+    assert wrong.status_code == 422
+    assert client.post(f"{V1}/studies", json={**base, "template_id": "qwen3_speculative_ood",
+                                              "mode": "local"}).status_code == 422
+
+
+def test_modal_start_needs_approval_and_a_reachable_app(make_client):
+    client, _ = make_client()
+    client.app.state.orchestrator.adapter_factory = client.app.state.orchestrator._default_adapter
+    s = flagship(client)
+    r = client.post(f"{V1}/studies/{s['id']}/start")
+    blockers = " ".join(r.json()["detail"]["blockers"])
+    assert r.status_code == 409 and "approved" in blockers and "modal:" in blockers
+    tiny = flagship(client, cap=0.5)
+    assert "above the $0.50 cap" in " ".join(client.post(f"{V1}/studies/{tiny['id']}/start").json()["detail"]["blockers"])
+
+
+def test_modal_runs_use_flagship_space_record_source_and_charge_every_run(make_client):
+    k3 = policies.key({"num_speculative_tokens": 3})
+    adapter = PaidFixture(script={(k3, "dev"): [{"status": "failed", "error": "preempted"}]}, default={"speedup": 0.95},
+                          evidence_class="observed")
+    client, _ = make_client(adapter)
+    s = flagship(client, trials=4, arm="metric_greedy")
+    client.post(f"{V1}/studies/{s['id']}/approve-budget")
+    done = run(client, s["id"])
+    exps = client.get(f"{V1}/studies/{s['id']}/experiments").json()
+    assert exps[1]["config"] == {"num_speculative_tokens": 3} and exps[1]["state"] == "FAILED"
+    assert all(set(e["config"]) == {"num_speculative_tokens"} for e in exps[1:])
+    assert {e["evidence_class"] for e in exps} == {"observed"} and exps[0]["source"]["call_id"] == "fc-1"
+    b = done["budget"]
+    assert b["observed_spend_usd"] == pytest.approx(0.6 * 4) and b["reserved_usd"] == 0   # the failed run is charged too
+    assert "OBSERVED" in done["evidence_label"] and "estimate" in done["evidence_label"]
+
+
+def test_modal_spend_cap_stops_the_study_before_exceeding_it(make_client):
+    client, adapter = make_client(PaidFixture(default={"speedup": 0.95}))
+    s = flagship(client, cap=2.0, trials=8, arm="metric_greedy")
+    client.post(f"{V1}/studies/{s['id']}/approve-budget")
+    done = run(client, s["id"])
+    # each run reserves $1.00 then settles at $0.60: 0.6+1, 1.2+1 > 2 -> the third run is refused
+    assert len(adapter.calls) == 2 and done["budget"]["observed_spend_usd"] == pytest.approx(1.2)
+    assert done["budget"]["observed_spend_usd"] <= 2.0 and "exceed" in done["latest_decision"]["rationale"]

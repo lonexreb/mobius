@@ -12,12 +12,13 @@ export const usd = (x: number | null | undefined) => (x === null || x === undefi
 
 export function configLabel(config: Record<string, number> | null): string {
   if (!config) return "target-only";
+  if ("num_speculative_tokens" in config) return `speculative tokens ${config.num_speculative_tokens}`;
   return `lookahead ${config.lookahead_tokens} · p_min ${config.draft_p_min}`;
 }
 
 export const EVIDENCE: Record<EvidenceClass, { tag: string; meaning: string }> = {
   local: { tag: "LOCAL", meaning: "Measured on this machine. Not comparable to the CUDA flagship." },
-  observed: { tag: "OBSERVED", meaning: "Imported from an externally scored run with a source ID." },
+  observed: { tag: "OBSERVED", meaning: "Measured on external compute by the fixed evaluator, with a source run ID." },
   replay: { tag: "REPLAY", meaning: "Recorded run re-served from the ledger. Not re-measured." },
   fixture: { tag: "FIXTURE", meaning: "Test data. Not a measurement." },
 };

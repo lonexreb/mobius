@@ -129,7 +129,7 @@ input:hover, select:hover, textarea:hover { border-color: var(--text-3); }
 .facts .wide { grid-column: 1 / -1; }
 .facts dt, .provenance dt { font-size: var(--text-xs); color: var(--text-3); }
 .facts dd { font-size: var(--text-sm); overflow-wrap: anywhere; }
-.modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-3); }
+.modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
 .modes legend { margin-bottom: var(--s-2); }
 .mode { display: grid; gap: var(--s-1); padding: var(--s-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); cursor: pointer; transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease); }
 .mode:hover { border-color: var(--text-3); }

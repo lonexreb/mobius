@@ -62,9 +62,18 @@ def evaluator_sha256() -> str:
     return h.hexdigest()
 
 
-def validate_config(config: dict) -> dict:
+def space_for(engine: str) -> dict:
+    """Pinned search space for an engine: 'llama' (local) or 'vllm' (flagship)."""
+    return MANIFEST["flagship"]["search_space"] if engine == "vllm" else MANIFEST["search_space"]
+
+
+def fixed_spec_for(engine: str) -> dict:
+    return MANIFEST["flagship"]["fixed_spec"] if engine == "vllm" else MANIFEST["fixed_spec"]
+
+
+def validate_config(config: dict, engine: str = "llama") -> dict:
     """Allowlist check: exactly the pinned knobs, exactly the pinned values."""
-    space = MANIFEST["search_space"]
+    space = space_for(engine)
     if not isinstance(config, dict) or set(config) != set(space):
         raise EvalError(f"config keys must be exactly {sorted(space)}")
     for k, v in config.items():
@@ -232,6 +241,8 @@ class LlamaCppEngine:
     Always runs a target-only server; candidates add a second, speculative server.
     """
 
+    name = "llama"
+
     def __init__(self) -> None:
         self.binary = shutil.which("llama-server")
         if not self.binary:
@@ -271,6 +282,7 @@ class LlamaCppEngine:
     def complete(self, prompt: str, speculative: bool) -> dict:
         _, port, _ = self.servers[speculative]
         gen = MANIFEST["generation"]
+        prompt = gen["chat_template"].format(system=gen["system_prompt"], prompt=prompt)
         body = json.dumps({"prompt": prompt, "n_predict": gen["max_output_tokens"], "temperature": gen["temperature"],
                            "seed": gen["seed"], "cache_prompt": False, "return_tokens": True, "stream": True}).encode()
         req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", data=body,
@@ -338,6 +350,160 @@ class LlamaCppEngine:
         self.servers = {}
 
 
+class VllmEngine:
+    """vLLM on a CUDA GPU: Qwen3-8B target-only, plus the EAGLE-3 speculator for candidates.
+
+    Written against a live install (see `probe`). The target-only server is kept alive across
+    runs in one container; `stop` only tears down the speculative server.
+    """
+
+    name = "vllm"
+    PORTS = {False: 8001, True: 8002}
+
+    def __init__(self) -> None:
+        self.binary = shutil.which("vllm")
+        if not self.binary:
+            raise EvalError("vllm not found on PATH")
+        try:
+            from huggingface_hub import snapshot_download
+            self.flagship = MANIFEST["flagship"]
+            self.paths = {key: snapshot_download(self.flagship[key]["repo"], revision=self.flagship[key]["revision"],
+                                                 local_files_only=True) for key in ("target_model", "speculator")}
+        except Exception as exc:
+            raise EvalError(f"pinned weights not cached; run the download step first ({exc})") from exc
+        self.servers: dict[bool, tuple[subprocess.Popen, list[str]]] = {}
+        self.load_seconds: dict[bool, float] = {}
+
+    def _launch(self, speculative: bool, config: dict | None) -> None:
+        gen, port = MANIFEST["generation"], self.PORTS[speculative]
+        util = self.flagship["gpu_memory_utilization"]["speculative" if speculative else "target_only"]
+        argv = [self.binary, "serve", self.paths["target_model"], "--served-model-name", "target",
+                "--host", "127.0.0.1", "--port", str(port), "--tensor-parallel-size", "1",
+                "--max-model-len", str(gen["ctx_size"]), "--gpu-memory-utilization", str(util),
+                "--seed", str(gen["seed"])]
+        if speculative:
+            argv += ["--speculative-config", json.dumps({
+                "model": self.paths["speculator"], "num_speculative_tokens": config["num_speculative_tokens"],
+                "method": "eagle3"})]
+        log_path = Path(f"/tmp/vllm_{port}.log")
+        t0 = time.monotonic()
+        with log_path.open("w") as log:
+            proc = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT)
+        while time.monotonic() - t0 < 900:
+            if proc.poll() is not None:
+                raise EvalError(f"vllm exited with code {proc.returncode} during startup: "
+                                f"{log_path.read_text()[-1500:]}")
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
+                self.servers[speculative] = (proc, argv)
+                self.load_seconds[speculative] = time.monotonic() - t0
+                return
+            except OSError:
+                time.sleep(2)
+        proc.kill()
+        raise EvalError("vllm did not become ready within 900s")
+
+    def start(self, config: dict | None) -> None:
+        if False not in self.servers or self.servers[False][0].poll() is not None:
+            self._launch(False, None)
+        if config is not None:
+            self._launch(True, config)
+
+    def _request(self, speculative: bool, body: dict):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.PORTS[speculative]}/v1/chat/completions",
+                                     data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        return urllib.request.urlopen(req, timeout=300)
+
+    def _body(self, prompt: str) -> dict:
+        gen = MANIFEST["generation"]
+        return {"model": "target", "temperature": gen["temperature"], "seed": gen["seed"],
+                "max_tokens": gen["max_output_tokens"],
+                "messages": [{"role": "system", "content": gen["system_prompt"]}, {"role": "user", "content": prompt}],
+                "chat_template_kwargs": self.flagship["chat_template_kwargs"]}
+
+    def complete(self, prompt: str, speculative: bool) -> dict:
+        raise EvalError("VllmEngine.complete is not finalised: run probe first")
+
+    def metrics_text(self, speculative: bool) -> str:
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.PORTS[speculative]}/metrics", timeout=10) as r:
+            return r.read().decode()
+
+    def probe(self) -> dict:
+        """Report what this build returns, so `complete` is written against facts, not memory."""
+        out: dict = {"vllm_version": subprocess.run([self.binary, "--version"], capture_output=True, text=True).stdout.strip(),
+                     "hardware": hardware()}
+        try:
+            self.start({"num_speculative_tokens": 3})
+            out["load_seconds"] = dict(self.load_seconds)
+            out["gpu_memory_used_mib"] = subprocess.run(
+                ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader"],
+                capture_output=True, text=True).stdout.strip()
+            prompt = "Write a Python function that returns the n-th Fibonacci number."
+            for label, extra in (("return_token_ids", {"return_token_ids": True}),
+                                 ("logprobs_as_ids", {"logprobs": True, "return_tokens_as_token_ids": True})):
+                try:
+                    with self._request(True, {**self._body(prompt), "max_tokens": 8, **extra}) as r:
+                        out[f"nonstream_{label}"] = json.loads(r.read())
+                except Exception as exc:
+                    out[f"nonstream_{label}"] = f"ERROR {exc}"
+            for arm in (False, True):
+                chunks, stamps = [], []
+                try:
+                    body = {**self._body(prompt), "stream": True, "return_token_ids": True,
+                            "stream_options": {"include_usage": True}}
+                    t0 = time.monotonic()
+                    with self._request(arm, body) as r:
+                        for line in r:
+                            if line.startswith(b"data: ") and b"[DONE]" not in line:
+                                chunks.append(json.loads(line[6:]))
+                                stamps.append(round(time.monotonic() - t0, 4))
+                    out[f"stream_{'spec' if arm else 'target'}"] = {
+                        "n_chunks": len(chunks), "first": chunks[:3], "last": chunks[-2:],
+                        "stamps_head": stamps[:6], "stamps_tail": stamps[-3:]}
+                except Exception as exc:
+                    out[f"stream_{'spec' if arm else 'target'}"] = f"ERROR {exc}"
+            out["spec_metric_names"] = sorted({ln.split("{")[0].split(" ")[0] for ln in self.metrics_text(True).splitlines()
+                                               if ln and not ln.startswith("#") and ("spec" in ln or "token" in ln)})
+            out["spec_metric_lines"] = [ln for ln in self.metrics_text(True).splitlines()
+                                        if "spec" in ln and not ln.startswith("#")][:20]
+        except EvalError as exc:
+            out["error"] = str(exc)
+        finally:
+            self.stop(everything=True)
+        return out
+
+    def rss_gb(self, speculative: bool) -> float | None:
+        return None  # host RSS is not the interesting number on a GPU; see gpu_memory in describe()
+
+    def describe(self) -> dict:
+        version = subprocess.run([self.binary, "--version"], capture_output=True, text=True, timeout=60).stdout.strip()
+        spec = True in self.servers
+        smi = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True).stdout.strip()
+        return {
+            "name": "vLLM (CUDA)", "engine_version": f"vllm {version}",
+            "argv": [a if not a.startswith("/") else Path(a).name for a in self.servers[spec][1]],
+            "target_model": self.flagship["target_model"]["repo"],
+            "target_model_sha256": self.flagship["target_model"]["revision"],
+            "draft_model": self.flagship["speculator"]["repo"] if spec else None,
+            "draft_model_sha256": self.flagship["speculator"]["revision"] if spec else None,
+            "model_id_kind": "Hugging Face repo revision (git commit), not a file sha256",
+            "gpu_memory_used_mib_both_servers": int(smi) if smi.isdigit() else None,
+            "server_load_seconds": {("speculative" if k else "target_only"): round(v, 1)
+                                    for k, v in self.load_seconds.items()},
+        }
+
+    def stop(self, everything: bool = False) -> None:
+        for arm in ([True, False] if everything else [True]):
+            entry = self.servers.pop(arm, None)
+            if entry and entry[0].poll() is None:
+                entry[0].terminate()
+                try:
+                    entry[0].wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    entry[0].kill()
+
+
 def hardware() -> dict:
     def sysctl(key: str) -> str | None:
         try:
@@ -345,8 +511,15 @@ def hardware() -> dict:
         except (OSError, subprocess.SubprocessError):
             return None
     mem = sysctl("hw.memsize")
-    return {"cpu": sysctl("machdep.cpu.brand_string") or platform.processor(), "gpu_model": None,
-            "accelerator": "Apple Metal (integrated)" if platform.system() == "Darwin" else None,
+    gpu = None
+    if shutil.which("nvidia-smi"):
+        try:
+            gpu = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
+                                 capture_output=True, text=True, timeout=20).stdout.strip() or None
+        except (OSError, subprocess.SubprocessError):
+            gpu = None
+    return {"cpu": sysctl("machdep.cpu.brand_string") or platform.processor(), "gpu_model": gpu,
+            "accelerator": "Apple Metal (integrated)" if platform.system() == "Darwin" else ("NVIDIA CUDA" if gpu else None),
             "memory_gb": int(mem) / 2**30 if mem and mem.isdigit() else None,
             "os": f"{platform.system()} {platform.release()}", "arch": platform.machine()}
 
@@ -357,7 +530,7 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
         unseal_final: bool = False, max_prompts: int | None = None) -> dict:
     """Run one evaluation and return the artifact. Raises EvalError rather than emit partial metrics."""
     if config is not None:
-        config = validate_config(config)
+        config = validate_config(config, getattr(engine, "name", "llama"))
         if reference is None:
             raise EvalError("candidate evaluation requires a target-only reference artifact")
     prompts, split_sha = load_prompts(split, unseal_final)
@@ -365,9 +538,6 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
         prompts = prompts[:max_prompts]
     gen = MANIFEST["generation"]
     ev_sha = evaluator_sha256()
-
-    def wrap(text: str) -> str:
-        return gen["chat_template"].format(system=gen["system_prompt"], prompt=text)
 
     started = datetime.now(timezone.utc)
     t0 = time.monotonic()
@@ -379,12 +549,12 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
         warm0 = time.monotonic()
         for arm in arms:
             for _ in range(gen["warmup_requests"]):
-                engine.complete(wrap(gen["warmup_prompt"]), arm)
+                engine.complete(gen["warmup_prompt"], arm)
         warmup_s = time.monotonic() - warm0
         for i, p in enumerate(prompts):
             for arm in (arms if i % 2 == 0 else arms[::-1]):  # flip order each prompt to cancel order effects
                 r0 = time.monotonic()
-                out = engine.complete(wrap(p["text"]), arm)
+                out = engine.complete(p["text"], arm)
                 rows[arm].append({"prompt_id": p["prompt_id"], "domain": p["domain"],
                                   "e2e_ms": (time.monotonic() - r0) * 1000, **out})
         rss = engine.rss_gb(spec) if hasattr(engine, "rss_gb") else None

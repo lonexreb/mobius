@@ -7,11 +7,13 @@ from .policies import label
 
 EVIDENCE_LABELS = {
     "local": "LOCAL: measured on this machine with llama.cpp. Not comparable to the Qwen3-8B / EAGLE-3 CUDA flagship.",
-    "observed": "OBSERVED: imported from an external scored run with source ID.",
+    "observed": "OBSERVED: measured on external compute by the fixed evaluator, with a source run ID.",
     "replay": "REPLAY: recorded runs re-served from the ledger. Nothing was re-measured.",
     "fixture": "FIXTURE: test data. Not a measurement; must not support any performance claim.",
 }
 MODE_LABELS = {"local": EVIDENCE_LABELS["local"], "replay": EVIDENCE_LABELS["replay"],
+               "modal": "OBSERVED: Qwen3-8B + EAGLE-3 on vLLM, measured on a rented NVIDIA GPU via Modal. "
+                        "Paid compute; cost shown is an estimate until reconciled with the Modal bill.",
                "autolab": "AUTOLAB: only imported, externally scored runs appear. No connection is verified yet."}
 
 
