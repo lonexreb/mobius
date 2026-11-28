@@ -182,7 +182,37 @@ Final decision: **INVESTIGATE** after 4 of 8 runs (12.1 minutes of run time). No
   whether "lossless" should mean bit-exact or within the target's own noise floor. That is a change to the frozen
   evaluator, so it must be a new study.
 
-### Cost
+### Follow-up study `study_04ce31a8ce`, 2026-11-27: is the mismatch target noise?
+
+Evaluator changed in `6cd0162` (so this is a new study with a new frozen hash): candidates are compared with the
+in-run target-only control, and every run sends each prompt to the target a second time to measure the target's own
+self-match in that run. Same models, vLLM 0.34.0, A100 80 GB, 24 dev prompts.
+
+| Run | Config | Speedup (95% CI) | By domain (chat / code / math) | Identical to in-run control | Target repeats itself | Control vs stored baseline | Draft acceptance | Verdict |
+|-----|--------|------------------|--------------------------------|-----------------------------|-----------------------|----------------------------|------------------|---------|
+| baseline | target-only | reference, 92.1 tok/s | n/a | n/a | 20 / 24 | n/a | n/a | valid reference |
+| 1 | 3 speculative tokens | 2.110× [2.016, 2.217] | 2.04 / 1.99 / 2.32 | 15 / 24 | 24 / 24 | 20 / 24 | 46% | invalid, rejected |
+| 2 | 2 speculative tokens | 2.037× [1.951, 2.093] | 1.98 / 2.02 / 2.11 | 15 / 24 | 24 / 24 | 20 / 24 | 58% | invalid, rejected |
+| 3 | 4 speculative tokens | 2.155× [2.038, 2.272] | 2.15 / 2.05 / 2.28 | 17 / 24 | 24 / 24 | 20 / 24 | 38% | invalid, rejected |
+
+Final decision: **INVESTIGATE** after 4 of 8 runs (13.5 minutes of run time). Nothing was promoted.
+
+- **The mismatch is not target noise.** In all three candidate runs the target repeated itself on 24 of 24 prompts, yet
+  the speculative output differed from that same control on 9, 9 and 7 prompts. In this setup EAGLE-3 speculation is
+  not token-exact with greedy target-only decoding.
+- **The speed result replicated.** Speedups and acceptance rates are within about 1% of the first study.
+- **The target differs between a first pass and later passes.** On a freshly started server the first and second pass
+  disagreed on 4 of 24 prompts; once warm, the target was stable and still 4 of 24 away from the stored first pass.
+  This matches the first study. A likely cause is prefix caching changing the numerics of a repeated prompt; that is a
+  guess and was not tested (it needs a run with prefix caching disabled).
+- **Not shown:** whether the differing outputs are worse. Only exact identity was tested, on 24 prompts, on one GPU
+  type and one vLLM version. No statistical significance is claimed.
+
+Cost of the follow-up: ledger estimate $0.86; Modal billed $0.66 for the day (`modal billing report --for today`, read
+right after the study). Running total on Modal is about $1.6 of the $25 cap. The idle container was again still listed
+after the study and was stopped by hand.
+
+### Cost (first study)
 
 | | Amount | Source |
 |---|--------|--------|
@@ -232,6 +262,6 @@ Still not done: Autolab (CLI, Hill, real payload mapping) and the sealed split. 
 | `7930539` | API: ledger, controller, orchestration, tests |
 | `60363ca` | Web UI, demo scripts, Codex request list |
 | `a4c33b7` | Fixes from an independent code review (10 findings, with regression tests) |
-| (next) | This runbook: see `git log --oneline` |
+| later | Runbook, Modal mode, vLLM engine, in-run control gate (`6cd0162`): see `git log --oneline` |
 
 `main` was not touched. Nothing was pushed.
