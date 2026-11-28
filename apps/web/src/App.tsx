@@ -95,7 +95,7 @@ export function App() {
         )}
       </main>
       <footer>
-        <p>Pilot instrumentation. Local results are not comparable to the Qwen3-8B / EAGLE-3 CUDA flagship, which has not been run. No statistical significance is claimed.</p>
+        <p>Pilot instrumentation. Local results are not comparable to the Qwen3-8B / EAGLE-3 CUDA flagship runs (labelled OBSERVED). No statistical significance is claimed.</p>
       </footer>
     </>
   );
