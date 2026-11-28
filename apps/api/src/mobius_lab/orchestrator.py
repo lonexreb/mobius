@@ -70,19 +70,23 @@ def validate(artifact: dict, exp: dict, study: dict, split_hashes: dict[str, str
          "model hash or engine version missing")
     correctness = _dict(artifact.get("correctness"))
     if exp["kind"] == "candidate":
-        gate("control_reproduces_reference", correctness.get("control_reproduces_reference") is True,
-             "in-run target-only control did not reproduce the stored reference tokens")
+        gate("control_self_consistent", correctness.get("control_self_consistent") is True,
+             f"target-only repeated itself on only {correctness.get('control_self_matched')}/"
+             f"{correctness.get('compared')} prompts in this run, so exact match cannot be judged")
         truncated = len(correctness.get("truncated_prefix_prompt_ids") or [])
         diverged = len(correctness.get("diverged") or [])
         gate("exact_token_match", correctness.get("exact_token_match") is True,
-             f"{correctness.get('matched')}/{correctness.get('compared')} prompts matched; "
+             f"{correctness.get('matched')}/{correctness.get('compared')} prompts matched the in-run control; "
              f"{truncated} stopped early (prefix equal), {diverged} diverged")
     validation = {"gates_passed": passed, "gates_failed": failed, "notes": notes,
                   "exact_token_match": correctness.get("exact_token_match"),
                   "output_token_match_rate": correctness.get("output_token_match_rate"),
                   "truncated_prefix": len(correctness.get("truncated_prefix_prompt_ids") or []),
                   "diverged": len(correctness.get("diverged") or []),
-                  "compared": correctness.get("compared"), "heldout_accessed_online": False}
+                  "compared": correctness.get("compared"), "heldout_accessed_online": False,
+                  "target_self_matched": _dict(artifact.get("target_self_consistency")).get("matched"),
+                  "target_self_compared": _dict(artifact.get("target_self_consistency")).get("compared"),
+                  "control_matched_reference": correctness.get("control_matched_reference")}
     repro = {**git_sha(), "evaluator_sha256": artifact.get("evaluator_sha256"),
              "dataset_split_sha256": artifact.get("dataset_split_sha256"), "engine": engine.get("name"),
              "engine_version": engine.get("engine_version"), "engine_argv": engine.get("argv"),

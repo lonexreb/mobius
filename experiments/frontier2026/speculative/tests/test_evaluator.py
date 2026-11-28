@@ -17,8 +17,9 @@ needs_prompts = pytest.mark.skipif(not (ev.HERE / "data" / "prompts_dev.jsonl").
 class FakeEngine:
     """FIXTURE engine: deterministic tokens, configurable speed. Never used outside tests."""
 
-    def __init__(self, tps=50.0, spec_tps=60.0, corrupt=False, nan=False):
-        self.tps, self.spec_tps, self.corrupt, self.nan = tps, spec_tps, corrupt, nan
+    def __init__(self, tps=50.0, spec_tps=60.0, corrupt=False, nan=False, flaky=False):
+        self.tps, self.spec_tps, self.corrupt, self.nan, self.flaky = tps, spec_tps, corrupt, nan, flaky
+        self.seen = set()
 
     def start(self, config):
         self.config = config
@@ -27,6 +28,9 @@ class FakeEngine:
         toks = [len(prompt) % 97, 7, 9]
         if speculative and self.corrupt and "Say hello" not in prompt:
             toks = toks[:2] if len(prompt) % 2 else [toks[0], 8, 9]
+        if not speculative and self.flaky and prompt in self.seen:
+            toks = [toks[0], 7, 10]   # the target disagrees with itself on a repeat
+        self.seen.add(prompt)
         tps = float("nan") if self.nan else (self.spec_tps if speculative else self.tps)
         return {"token_ids": toks, "decode_tps": tps, "output_tokens": len(toks), "prompt_tokens": 5, "ttft_ms": 10.0,
                 "stop_type": "limit", "draft_n": 10 if speculative else None, "draft_n_accepted": 8 if speculative else None}
@@ -102,7 +106,8 @@ def test_run_scores_candidate_against_reference():
     assert cand["correctness"]["exact_token_match"] is True
     assert cand["metrics"]["speedup_vs_target"] == pytest.approx(1.2)
     assert cand["metrics"]["draft_acceptance_rate"] == pytest.approx(0.8)
-    assert cand["correctness"]["control_reproduces_reference"] is True
+    assert cand["correctness"]["control_self_consistent"] is True
+    assert base["target_self_consistency"]["matched"] == 24
     assert len(cand["control_requests"]) == len(cand["requests"]) == 24
     assert cand["evaluator_sha256"] == ev.evaluator_sha256()
 
@@ -114,6 +119,14 @@ def test_corrupted_output_fails_correctness_but_still_reports():
     assert cand["correctness"]["exact_token_match"] is False
     assert cand["correctness"]["matched"] == 0
     assert cand["correctness"]["truncated_prefix_prompt_ids"] and cand["correctness"]["diverged"]
+
+
+@needs_prompts
+def test_unstable_target_is_reported_not_hidden():
+    base = ev.run(FakeEngine(50), None, "dev", None)
+    cand = ev.run(FakeEngine(50, 60, flaky=True), CFG, "dev", base)
+    assert cand["correctness"]["control_self_consistent"] is False
+    assert cand["correctness"]["control_self_matched"] < 24
 
 
 @needs_prompts

@@ -18,10 +18,15 @@ Measurement design (pre-registered, forced by what was observed on this machine)
   * Streaming. Token IDs are accumulated from stream chunks, which also gives a
     measured time-to-first-token.
   * decode_tps = emitted tokens / server-reported decode time.
+  * Lossless is judged against the in-run control, and only when the target is
+    self-consistent. On the CUDA flagship the in-run target-only control differed from
+    the stored baseline on 4/24 prompts, so a stored baseline is not a usable token
+    reference. Every run therefore sends each prompt to the target a second time; a
+    candidate is lossless only if that repeat equals the control on every prompt (the
+    target's own noise floor is zero in this run) and the candidate equals the control.
+    Agreement with the stored baseline is still recorded, as a diagnostic only.
 
-Engines implement `Engine`. `LlamaCppEngine` is verified locally. The vLLM/CUDA
-flagship engine is intentionally absent until it can be written against an installed
-vLLM (see docs/MOBIUS_LAB_CODEX_REQUESTS.md); nothing here guesses its flags.
+Engines implement `Engine`: `LlamaCppEngine` (local) and `VllmEngine` (CUDA flagship).
 """
 
 from __future__ import annotations
@@ -597,6 +602,7 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
     spec = config is not None
     arms = [False, True] if spec else [False]
     rows: dict[bool, list[dict]] = {False: [], True: []}
+    repeat: list[dict] = []   # second target-only pass: the target's own noise floor in this run
     try:
         engine.start(config)
         warm0 = time.monotonic()
@@ -610,18 +616,19 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
                 out = engine.complete(p["text"], arm)
                 rows[arm].append({"prompt_id": p["prompt_id"], "domain": p["domain"],
                                   "e2e_ms": (time.monotonic() - r0) * 1000, **out})
+            repeat.append({"prompt_id": p["prompt_id"], "domain": p["domain"], **engine.complete(p["text"], False)})
         rss = engine.rss_gb(spec) if hasattr(engine, "rss_gb") else None
         engine_info = engine.describe()
     finally:
         engine.stop()
 
-    for r in rows[False] + rows[True]:
+    for r in rows[False] + rows[True] + repeat:
         if not r["token_ids"] or not math.isfinite(r["decode_tps"]) or r["decode_tps"] <= 0:
             raise EvalError(f"non-finite or empty measurement for {r['prompt_id']}")
 
     requests = rows[spec]
     artifact = {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "candidate" if spec else "target_only",
         "config": config,
         "split": split,
@@ -638,6 +645,8 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
         "server_rss_gb": rss,
         "requests": requests,
         "control_requests": rows[False] if spec else None,
+        "target_repeat_requests": repeat,
+        "target_self_consistency": compare_tokens(rows[False], repeat),
         "metrics": aggregate(requests),
         "correctness": None,
         "reference": None,
@@ -651,10 +660,15 @@ def run(engine: Engine, config: dict | None, split: str, reference: dict | None,
             mismatch.append("target_model_sha256")
         if mismatch:
             raise EvalError(f"reference is not a matched target-only run; differs in: {mismatch}")
-        artifact["correctness"] = compare_tokens(reference["requests"], requests)
-        # the in-run control must reproduce the stored reference, otherwise the gate itself is unreliable
-        artifact["correctness"]["control_reproduces_reference"] = compare_tokens(
-            reference["requests"], rows[False])["exact_token_match"]
+        vs_stored = compare_tokens(reference["requests"], rows[False])
+        artifact["correctness"] = {
+            **compare_tokens(rows[False], requests), "compared_against": "in-run target-only control",
+            # the target must reproduce itself within this run, otherwise an exact-match gate means nothing
+            "control_self_consistent": artifact["target_self_consistency"]["exact_token_match"],
+            "control_self_matched": artifact["target_self_consistency"]["matched"],
+            # diagnostic only: a warm server need not reproduce an earlier cold run
+            "control_reproduces_reference": vs_stored["exact_token_match"],
+            "control_matched_reference": vs_stored["matched"]}
         artifact["metrics"].update(speedup_stats(rows[False], requests))
         artifact["metrics"]["control_throughput_tokens_per_sec"] = aggregate(rows[False])["throughput_tokens_per_sec"]
         artifact["reference"] = {"started_at": reference["started_at"]}

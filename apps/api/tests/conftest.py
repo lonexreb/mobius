@@ -36,7 +36,7 @@ def make_artifact(config, split="dev", speedup=1.2, ci_low=None, domains=None, e
                        "truncated_prefix_prompt_ids": [f"t{i}" for i in range(truncated)],
                        "diverged": [{"prompt_id": f"d{i}", "first_divergent_index": 3} for i in range(diverged)],
                        "missing_prompt_ids": [], "exact_token_match": exact and not bad,
-                       "control_reproduces_reference": control_ok}
+                       "control_self_consistent": control_ok}
     if drop_metric:
         metrics.pop(drop_metric)
     return {"schema_version": 2, "kind": "candidate" if config else "target_only", "config": config, "split": split,

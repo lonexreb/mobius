@@ -56,6 +56,9 @@ export interface Validation {
   truncated_prefix?: number;
   diverged?: number;
   compared?: number | null;
+  target_self_matched?: number | null;
+  target_self_compared?: number | null;
+  control_matched_reference?: number | null;
 }
 
 export interface Experiment {

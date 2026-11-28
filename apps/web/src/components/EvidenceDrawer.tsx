@@ -86,6 +86,8 @@ export function EvidenceDrawer({ experimentId, version, onClose, onSelect }: Pro
               <p className="dim">
                 Tokens matched on {tokenMatch(exp)} prompts. {v.truncated_prefix} stopped early with an identical prefix,{" "}
                 {v.diverged} diverged mid-sequence. Any mismatch fails the lossless gate.
+                {v.target_self_compared != null && <> Compared against the in-run target-only control; the target repeated
+                  itself on {v.target_self_matched}/{v.target_self_compared} prompts in this run.</>}
               </p>
             ) : null}
           </section>
