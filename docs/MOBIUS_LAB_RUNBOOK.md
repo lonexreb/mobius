@@ -1,0 +1,267 @@
+# Möbius Lab runbook
+
+[Implementation handoff](MOBIUS_LAB_CLAUDE_CODE_HANDOFF.md) · [External dependencies for Codex](MOBIUS_LAB_CODEX_REQUESTS.md)
+
+Möbius Lab is a local web app: you give it an ML optimization objective and a budget; a transparent
+controller proposes experiments, a fixed evaluator scores them, and the controller promotes, replicates,
+audits, rejects, investigates or stops, with every decision and its evidence stored in a SQLite ledger.
+
+Local runs were on an Apple M4 Max (64 GB), macOS 26.2, at $0. The flagship ran on a rented Modal A100 for about $0.90 billed, under an owner-approved $25 cap. All on 2026-11-22.
+
+## Start it
+
+```bash
+./scripts/demo_local.sh          # builds what is missing, starts API + UI, Ctrl-C stops both
+```
+
+or by hand, in two terminals:
+
+```bash
+# one-time setup
+cargo build -p mobius-cli
+uv run --python 3.12 --with pyarrow python experiments/frontier2026/speculative/fetch_prompts.py
+cd apps/api && uv venv --python 3.12 .venv && uv pip install -p .venv -e ".[dev]"
+cd apps/web && npm install
+
+# terminal 1: API on 127.0.0.1:8000
+cd apps/api && .venv/bin/uvicorn mobius_lab.main:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 3
+
+# terminal 2: UI on http://127.0.0.1:5173
+cd apps/web && npm run dev
+```
+
+Check: `curl -fsS http://127.0.0.1:8000/api/v1/health`
+
+Local studies need `llama-server` on PATH (`brew install llama.cpp`) and the Ollama models
+`qwen2.5:7b` and `qwen2.5:1.5b` (`ollama pull ...`), or GGUF paths in `MOBIUS_LAB_TARGET_GGUF` /
+`MOBIUS_LAB_DRAFT_GGUF`. Without them the UI shows the local evaluator as unavailable and blocks Start.
+
+State lives in `apps/api/var/` (ledger `lab.sqlite`, run artifacts, per-arm Rust optimizer state). It is
+git-ignored. Delete the directory to reset.
+
+## Tests
+
+| Command | Result on 2026-11-22 |
+|---------|----------------------|
+| `cargo fmt --all -- --check` | clean (before and after) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean (before and after) |
+| `cargo test --workspace` | 161 passed, 0 failed (bench 4, claw 74, cli 25, core 24, mcp 30 + 4 e2e) |
+| `cd apps/api && .venv/bin/pytest -q` | 89 passed (75 API/policy/budget/import/replay/bridge/modal + 14 evaluator) |
+| `cd apps/web && npm run build` | type-check + build OK, 79.6 kB gzipped JS |
+| `cd apps/web && npx vitest run` | 4 passed |
+
+No Rust source was changed. The Rust CLI is used as built: `mobius ask --strategy tpe --metric speedup_vs_target --store sqlite`
+and `mobius tell`, with a separate `HOME` and working directory per study and policy arm
+(`apps/api/var/mobius_state/<study>/<arm>/`). Verified: the global `~/.mobius` is untouched.
+
+Not automated: browser end-to-end tests. The UI was checked by hand in Chrome at desktop width and at
+768 / 390 / 320 px (no horizontal overflow), against real API data.
+
+## Demo flow (about 90 seconds of talking, 6 minutes of machine time)
+
+1. Home: point at Connections. Local evaluator and the Rust optimizer are ready; Autolab, GPU, LLM proposer and Egbe say "not connected" with the reason.
+2. Leave the defaults (local validation, `evidence_aware`, 8 runs, $0) and press **Create and start**.
+3. The timeline fills in live: target-only baseline first, then candidates branching from each other.
+4. Click a candidate. The drawer shows the hypothesis, each validity gate, the measured metrics, per-domain speedup, provenance hashes and per-prompt rows.
+5. "Why Möbius did this" shows the current decision with the run IDs it cites; expand the full trace.
+6. Export the report (.md) and the evidence (.json).
+7. For a no-wait demo: create a study in **Replay recorded runs** mode from a finished study. It re-decides from recorded artifacts in about a second and is labelled REPLAY everywhere.
+
+If time allows, run the same budget with `metric_greedy` and compare how many runs each policy spent.
+
+## What was measured
+
+Workload: 24 dev prompts (8 each from LiveCodeBench code_generation_lite, MATH-500 and UltraChat at pinned
+revisions), greedy decoding, 96 output tokens. Target `qwen2.5:7b`, draft `qwen2.5:1.5b`, llama.cpp
+build 7480 on Metal. Speedup is candidate ÷ interleaved in-run target-only control.
+
+### Study `study_3919d763ab`: `evidence_aware`, 8-run budget
+
+| Run | Config | Speedup (95% CI) | Prompts with identical tokens | Draft acceptance | Verdict |
+|-----|--------|------------------|-------------------------------|------------------|---------|
+| baseline | target-only | reference, 63.8 tok/s | reference | n/a | valid reference |
+| 1 | lookahead 4, p_min 0.75 | 0.744× [0.719, 0.766] | 8 / 24 | 85% | invalid, rejected |
+| 2 | lookahead 4, p_min 0.5 | 0.719× [0.681, 0.776] | 6 / 24 | 77% | invalid, rejected |
+| 3 | lookahead 2, p_min 0.5 | 0.781× [0.748, 0.818] | 12 / 24 | 83% | invalid, rejected |
+
+Final decision: **INVESTIGATE** after 4 of 8 runs (6.1 minutes). Three distinct configs failed the exact-token gate
+and none passed, so the controller stopped searching knobs and left 4 runs unspent.
+
+### Study `study_68dddde577`: `metric_greedy`, same 8-run budget
+
+| Run | Config | Speedup (95% CI) | Prompts with identical tokens | Draft acceptance | Verdict |
+|-----|--------|------------------|-------------------------------|------------------|---------|
+| baseline | target-only | reference, 56.7 tok/s | reference | n/a | valid reference |
+| 1 | lookahead 4, p_min 0.75 | 0.741× [0.713, 0.767] | 8 / 24 | 85% | invalid, rejected |
+| 2 | lookahead 4, p_min 0.5 | 0.704× [0.675, 0.733] | 6 / 24 | 77% | invalid, rejected |
+| 3 | lookahead 2, p_min 0.5 | 0.804× [0.760, 0.833] | 12 / 24 | 83% | invalid, rejected |
+| 4 | lookahead 2, p_min 0.75 | 0.791× [0.772, 0.822] | 14 / 24 | 86% | invalid, rejected |
+| 5 | lookahead 2, p_min 0.9 | 0.808× [0.762, 0.864] | 12 / 24 | 86% | invalid, rejected |
+| 6 | lookahead 4, p_min 0.9 | 0.773× [0.725, 0.833] | 9 / 24 | 87% | invalid, rejected |
+| 7 | lookahead 8, p_min 0.9 | 0.831× [0.803, 0.880] | 9 / 24 | 87% | invalid, rejected |
+
+Final decision: **STOP** after all 8 runs (13.6 minutes): none was valid and faster than target-only.
+
+Both arms reached the same conclusion; `evidence_aware` got there in half the runs. The first three configs are the
+same in both studies and their numbers agree closely (0.744 / 0.741, 0.719 / 0.704, 0.781 / 0.804, identical match
+counts), which is one informal replication.
+
+### Study `study_e9e2e4f286`: replay of the first study
+
+Re-served the four recorded runs in about a second, labelled REPLAY, and reached the same INVESTIGATE decision.
+
+### What this does and does not show
+
+- On this engine and model pair, speculative decoding was **slower** than target-only and **not lossless**. Most mismatches are outputs that stop a few tokens short of the 96-token limit with an identical prefix; a minority diverge mid-sequence. The in-run target-only control reproduced the stored reference tokens in every run, so the gate itself is trustworthy.
+- This is a result about llama.cpp build 7480 with a Qwen2.5-1.5B draft on Apple Metal. It says **nothing** about Qwen3-8B with EAGLE-3 on vLLM/CUDA, which has not been run.
+- (Local studies) It does **not** show that one policy is better than another. Two studies, one machine, pilot-sized prompt sets: no significance is claimed.
+- No candidate passed validity, so the replicate, audit and promote paths were not exercised on real data. They are covered by tests with fixture data only (`apps/api/tests/`), which is labelled FIXTURE and cannot be replayed as evidence.
+
+## How the pieces fit
+
+| Piece | Where | Notes |
+|-------|-------|-------|
+| Evaluator | `experiments/frontier2026/speculative/evaluator.py` | Separate process, stdlib only. Config allowlist, token-ID equality, paired speedup, bootstrap CI |
+| Prompt registry | `experiments/frontier2026/speculative/dataset_registry.json` | Revisions, checksums, prompt and split hashes; no prompt text in git |
+| Ledger | `apps/api/src/mobius_lab/persistence.py` | SQLite WAL; studies, experiments, decisions, budget events, event stream, import claims |
+| Controller | `apps/api/src/mobius_lab/policies.py` | Pure function of observed state; six arms |
+| Orchestrator | `apps/api/src/mobius_lab/orchestrator.py` | decide → reserve budget → run → validate → record |
+| Adapters | `apps/api/src/mobius_lab/adapters.py` | Local evaluator, replay, Rust `ask`/`tell` bridge, connection readiness |
+| API | `apps/api/src/mobius_lab/main.py` | `/api/v1`: health, templates, connections, studies, experiments, events (SSE), report, export, import |
+| UI | `apps/web/src/` | React + TypeScript + Vite |
+
+Evidence labels: **LOCAL** (measured here), **OBSERVED** (imported external run with source ID),
+**REPLAY** (recorded run re-served), **FIXTURE** (tests only).
+
+Controller rules, in order: no valid baseline → run it. Failed or invalid run → reject. `evidence_aware` only:
+gain inside the within-run CI → replicate; replicates that disagree in direction → flag as unstable; always hold
+back enough budget to audit on the longer-prompt split before promoting; three distinct configs invalid with none
+valid → investigate; three valid configs all below 0.90× → stop. Other arms promote the best valid dev score.
+Thresholds are constants at the top of `policies.py`.
+
+Budget: scored runs, wall time and USD are checked atomically before each run. Unknown cost is refused rather
+than treated as zero. Cost categories are tracked separately (rented GPU, LLM inference, Autolab agent,
+imported Autolab runs); unknown amounts are counted as unknown. A non-zero cap needs an explicit approval call.
+Starting twice, or importing the same external run twice, creates one run and one charge.
+
+Restart behaviour: studies, results and decisions persist. A run that was in flight is cancelled (no
+measurement recorded, reservation released) and its study is paused; press Resume.
+
+## Flagship (Qwen3-8B + EAGLE-3 on vLLM): run on Modal, 2026-11-22
+
+Owner-approved cap: **$25**. Setup: `Qwen/Qwen3-8B@b968826d` with `RedHatAI/Qwen3-8B-speculator.eagle3@08610ffa`,
+vLLM 0.34.0, one NVIDIA A100-SXM4-80GB on Modal (workspace `reach2shubhankar`), thinking disabled, greedy,
+96 output tokens, same 24 dev prompts and the same paired, interleaved evaluator as the local runs. Both servers fit on
+one card together (67.5 GB used).
+
+### Study `study_a3c5488e4c`: `evidence_aware`, 8-run budget
+
+| Run | Config | Speedup (95% CI) | By domain (chat / code / math) | Prompts identical to stored baseline | Draft acceptance | Verdict |
+|-----|--------|------------------|--------------------------------|--------------------------------------|------------------|---------|
+| baseline | target-only | reference, 92.2 tok/s | n/a | reference | n/a | valid reference |
+| 1 | 3 speculative tokens | 2.122× [2.018, 2.224] | 2.03 / 2.06 / 2.28 | 14 / 24 | 47% | invalid, rejected |
+| 2 | 2 speculative tokens | 2.030× [1.947, 2.088] | 1.98 / 2.01 / 2.10 | 14 / 24 | 58% | invalid, rejected |
+| 3 | 4 speculative tokens | 2.159× [2.038, 2.272] | 2.14 / 2.06 / 2.28 | 18 / 24 | 38% | invalid, rejected |
+
+Final decision: **INVESTIGATE** after 4 of 8 runs (12.1 minutes of run time). Nothing was promoted.
+
+### Reading it honestly
+
+- **The speed is real and large:** about 2.0 to 2.2× decode throughput in every domain, with tight within-run intervals.
+- **Lossless equivalence was not established**, so the controller refused to promote it. Two gates failed on every candidate.
+- **The baseline itself is not bit-stable.** From the stored token IDs (no extra spend): the in-run target-only control
+  differed from the stored target-only baseline on 4 of 24 prompts, diverging at token 28 to 84. The three controls were
+  identical to each other. So two target-only passes on the same GPU did not agree exactly.
+- **Speculation disagrees more than that.** Against its own interleaved control, the speculative output differed on
+  9, 9 and 7 of 24 prompts, spread across all three domains.
+- **What this does not show:** whether speculation changes outputs beyond the target's own run-to-run noise. 4/24 versus
+  7 to 9/24 on one pilot is suggestive, not conclusive. It also says nothing about output *quality*; only exact identity
+  was tested. No statistical significance is claimed.
+- **Next experiment the evidence asks for:** replicate the target-only baseline several times to measure its
+  self-mismatch rate, compare candidates against the in-run control rather than a stored baseline, and only then decide
+  whether "lossless" should mean bit-exact or within the target's own noise floor. That is a change to the frozen
+  evaluator, so it must be a new study.
+
+### Follow-up study `study_04ce31a8ce`, 2026-11-27: is the mismatch target noise?
+
+Evaluator changed in `6cd0162` (so this is a new study with a new frozen hash): candidates are compared with the
+in-run target-only control, and every run sends each prompt to the target a second time to measure the target's own
+self-match in that run. Same models, vLLM 0.34.0, A100 80 GB, 24 dev prompts.
+
+| Run | Config | Speedup (95% CI) | By domain (chat / code / math) | Identical to in-run control | Target repeats itself | Control vs stored baseline | Draft acceptance | Verdict |
+|-----|--------|------------------|--------------------------------|-----------------------------|-----------------------|----------------------------|------------------|---------|
+| baseline | target-only | reference, 92.1 tok/s | n/a | n/a | 20 / 24 | n/a | n/a | valid reference |
+| 1 | 3 speculative tokens | 2.110× [2.016, 2.217] | 2.04 / 1.99 / 2.32 | 15 / 24 | 24 / 24 | 20 / 24 | 46% | invalid, rejected |
+| 2 | 2 speculative tokens | 2.037× [1.951, 2.093] | 1.98 / 2.02 / 2.11 | 15 / 24 | 24 / 24 | 20 / 24 | 58% | invalid, rejected |
+| 3 | 4 speculative tokens | 2.155× [2.038, 2.272] | 2.15 / 2.05 / 2.28 | 17 / 24 | 24 / 24 | 20 / 24 | 38% | invalid, rejected |
+
+Final decision: **INVESTIGATE** after 4 of 8 runs (13.5 minutes of run time). Nothing was promoted.
+
+- **The mismatch is not target noise.** In all three candidate runs the target repeated itself on 24 of 24 prompts, yet
+  the speculative output differed from that same control on 9, 9 and 7 prompts. In this setup EAGLE-3 speculation is
+  not token-exact with greedy target-only decoding.
+- **The speed result replicated.** Speedups and acceptance rates are within about 1% of the first study.
+- **The target differs between a first pass and later passes.** On a freshly started server the first and second pass
+  disagreed on 4 of 24 prompts; once warm, the target was stable and still 4 of 24 away from the stored first pass.
+  This matches the first study. A likely cause is prefix caching changing the numerics of a repeated prompt; that is a
+  guess and was not tested (it needs a run with prefix caching disabled).
+- **Not shown:** whether the differing outputs are worse. Only exact identity was tested, on 24 prompts, on one GPU
+  type and one vLLM version. No statistical significance is claimed.
+
+Cost of the follow-up: ledger estimate $0.86; Modal billed $0.66 for the day (`modal billing report --for today`, read
+right after the study). Running total on Modal is about $1.6 of the $25 cap. The idle container was again still listed
+after the study and was stopped by hand.
+
+### Cost (first study)
+
+| | Amount | Source |
+|---|--------|--------|
+| Ledger estimate for the 4 runs | $0.79 | (call seconds + 60 s idle window) × $0.000817/s, deliberately high |
+| Modal billed, all `mobius-lab-bench` apps | $0.90 | `modal billing report --for today`, read right after the study; may still settle upward slightly |
+
+The billed figure also covers the weight download, a crashed first attempt and the 5-minute vLLM probe. Total is
+under 4% of the cap. After the study one GPU container was still listed a few minutes later; it was stopped by hand
+(`modal container stop`). Check `modal container list` after any run.
+
+### How to run it again
+
+```bash
+modal profile activate reach2shubhankar
+modal run integrations/modal/bench_app.py::download      # CPU, once
+modal deploy integrations/modal/bench_app.py             # deployed app: survives the laptop sleeping
+```
+
+Then in the UI: template "Qwen3-8B + EAGLE-3", mode "Modal GPU (paid)", set a cap, create, approve the cap, start.
+A temporary `modal run` app is stopped by Modal when the laptop sleeps or drops network; that killed two early attempts.
+
+Still not done: Autolab (CLI, Hill, real payload mapping) and the sealed split. See
+[MOBIUS_LAB_CODEX_REQUESTS.md](MOBIUS_LAB_CODEX_REQUESTS.md).
+
+## Known limitations
+
+- No authentication. The API must stay on 127.0.0.1.
+- Stopping the API while a browser tab is open can hang on the open event stream; the shutdown timeout flag above bounds that to 3 seconds. Without it, the old process keeps the ledger lock and a new one refuses to start.
+- One API process per ledger: a second instance refuses to start (`var/lab.lock`). Running `demo_local.sh` twice fails on purpose.
+- An imported Autolab run with `cost_usd: null` is recorded with an unknown-cost event rather than refused, including on a $0 study. It is visible in the budget panel but is not blocked.
+- Double-run protection relies on one study loop per process plus the single-process lock; there is no distributed guard.
+- One policy arm per study. There is no matched multi-arm comparison view; compare two studies by hand.
+- Autolab mode can only receive imported runs. It cannot dispatch, poll or cancel remote work.
+- Replay re-serves runs recorded in the same ledger. Importing an exported JSON from another machine is not implemented.
+- Hypotheses come from a rule-based neighbourhood proposer, not an LLM.
+- The sealed split has never been evaluated; there is no post-freeze unsealing workflow beyond the evaluator's `--unseal-final` flag.
+- Bootstrap CIs cover prompt-to-prompt variation within a run only. Background load moved target-only throughput by about 30% between back-to-back runs on this machine, which is why speedup uses an interleaved control.
+- Peak memory is the server process RSS, which under-reports Metal memory. Time-to-first-token is client-measured over a streaming response.
+- The TPE arm's first suggestions are random until the Rust optimizer has enough history, and are not seeded.
+- Not built from the handoff: Egbe integration, comparison route, Playwright suite, TanStack Query, a separate architecture doc.
+
+## Commits on `revival/sundai-recursive-experiments-2026`
+
+| Commit | Contents |
+|--------|----------|
+| `0f0c7d0` | Prompt registry and paired speculative-decoding evaluator |
+| `7930539` | API: ledger, controller, orchestration, tests |
+| `60363ca` | Web UI, demo scripts, Codex request list |
+| `a4c33b7` | Fixes from an independent code review (10 findings, with regression tests) |
+| later | Runbook, Modal mode, vLLM engine, in-run control gate (`6cd0162`): see `git log --oneline` |
+
+`main` was not touched. Nothing was pushed.

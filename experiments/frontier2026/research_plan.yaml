@@ -1,0 +1,105 @@
+# Proposed experiment plan; this is configuration metadata, not a runnable Möbius 0.1 API.
+# No cloud job has been started or authorized. Hashes and credentials must be filled from verified sources.
+version: "0.2-draft"
+as_of: "2026-11-20"
+parent_spec: "../../docs/MOBIUS_FRONTIER_RESEARCH_NOV_2026.md"
+research_question: "Does evidence-aware experimental allocation improve hidden-OOD quality at fixed total research spend?"
+budget:
+  approved_spend_usd: 0
+  estimated_pilot_budget_usd: null
+  approval_required_for_paid_compute: true
+  count_agent_inference_cost: true
+  count_verifier_cost: true
+  max_trials_per_arm: 6
+  policy_arms:
+    - metric_greedy
+    - tpe
+    - evidence_aware
+experiment_groups:
+  inference_testbed:
+    goal: "Replicate lossless speculative decoding and test cross-domain proxy misalignment."
+    target_model: "Qwen/Qwen3-8B"
+    verified_pretrained_speculator: "RedHatAI/Qwen3-8B-speculator.eagle3"
+    serving_reference: "https://docs.vllm.ai/projects/speculators/en/stable/user_guide/getting_started/"
+    engine: "vllm"
+    source_data:
+      - id: "livecodebench/code_generation_lite"
+        role: "code prompt workload; pick a pre-registered timestamp range and source revision"
+        revision: null
+      - id: "HuggingFaceH4/MATH-500"
+        role: "math prompt workload; evaluation ONLY, not training"
+        revision: null
+      - id: "HuggingFaceH4/ultrachat_200k"
+        role: "chat prompt workload"
+        revision: null
+    development:
+      prompts_per_domain: 60
+      deterministic_seed: 2026
+    sealed_ood:
+      prompts_per_domain: 60
+      seed: 2027
+      stored_outside_proposer_workspace: true
+      exposed_to_proposer: false
+    controls:
+      - target_only
+      - fixed_lookahead
+      - tpe_lookahead
+    candidate_knobs:
+      - lookahead_tokens
+      - batching
+      - verification_strategy_if_backend_supported
+    hard_constraints:
+      - "No change to target-model weights for lossless comparison."
+      - "Greedy generated outputs must match exactly on identical prompts."
+      - "No edits to evaluator or sealed data."
+      - "No latency claim across mismatched GPU engines."
+    metrics:
+      primary: "validated_output_tokens_per_second_at_matched_quality_and_hardware"
+      secondary:
+        - "p50_latency_ms"
+        - "p95_latency_ms"
+        - "time_to_first_token_ms"
+        - "accepted_tokens_per_verify"
+        - "peak_vram_gb"
+        - "gpu_seconds"
+        - "gpu_cost_usd"
+      validity:
+        - "greedy_output_exact_match"
+        - "warmup_and_same_hw"
+  agent_posttraining:
+    goal: "Optimize qualified RL task curriculum for generalization outside the training harness."
+    training_dataset: "harness-hub/agentic-coding-envs"
+    training_dataset_revision: null
+    rollout_environment: "Harbor + OpenEnv"
+    trainer: "TRL AsyncGRPOTrainer + LoRA"
+    base_model: null # Select after pilot shows nondegenerate task outcomes.
+    heldout_benchmark: "terminal-bench/terminal-bench@4.1.0"
+    heldout_benchmark_reference: "https://hub.harborframework.com/datasets/terminal-bench/terminal-bench/5"
+    per_trial_time_limit: null
+    metrics:
+      primary: "pass_at_1_under_identical_harness_and_budget"
+      secondary:
+        - "solved_tasks_per_usd"
+        - "avg_tool_calls_per_task"
+        - "avg_tokens_per_task"
+        - "OOD_gap"
+        - "all_pass_all_fail_fraction"
+        - "reward_hacking_incidents"
+    start_only_after: "Track A has one real reproducible scored baseline and explicit GPU approval."
+evaluation:
+  hidden_metric_access_online: false
+  final_test_after_policy_frozen: true
+  repeats_for_research_claim: 3
+  report_negative_results: true
+  claims_require_source_run_ids: true
+  provenance:
+    - "commit_sha"
+    - "model_revision"
+    - "dataset_revision"
+    - "eval_hill_hash"
+    - "prompt_split_hash"
+    - "backend_build_version"
+    - "GPU_model"
+    - "seed"
+    - "full_cost_breakdown"
+    - "external_run_id"
